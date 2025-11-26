@@ -16,7 +16,7 @@ from src.dataset import make_supervised_data_module
 from src.params import DataArguments, ModelArguments, TrainingArguments
 from train.train_utils import get_peft_state_maybe_zero_3, get_peft_state_non_lora_maybe_zero_3, safe_save_model_for_hf_trainer
 import pathlib
-from liger_kernel.transformers import apply_liger_kernel_to_qwen2_vl, apply_liger_kernel_to_qwen2_5_vl
+from liger_kernel.transformers import apply_liger_kernel_to_qwen2_vl, apply_liger_kernel_to_qwen2_5_vl, apply_liger_kernel_to_qwen3_vl
 from monkey_patch_forward import (
     replace_qwen3_with_mixed_modality_forward,
     replace_qwen2_5_with_mixed_modality_forward, 
@@ -107,7 +107,7 @@ def train():
         replace_qwen3_with_mixed_modality_forward()
         # This is becuase mixed-modality training monkey-patches the model forward method.
         if use_liger:
-            raise ValueError("Liger is not supported for Qwen3 model.")
+            apply_liger_kernel_to_qwen3_vl()
     
     else:
         # It monkey patches the forward to handle mixed modality inputs.

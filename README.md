@@ -14,6 +14,7 @@ and [Qwen3-VL](https://huggingface.co/Qwen/Qwen3-VL-4B-Thinking) with only using
 
 ## Update
 
+- [2025/11/26] Update support for liger-kernel in Qwen3-VL.
 - [2025/10/16] 🔥**Update for Qwen3-VL(non-moe) and `transformers==4.57.0`**
 - [2025/10/13] **Update GRPO for `trl==0.23.1`**
 - [2025/09/12] 🔥**Update for `transformers==4.56.1` and torch==`2.8.0`**
@@ -39,7 +40,7 @@ and [Qwen3-VL](https://huggingface.co/Qwen/Qwen3-VL-4B-Thinking) with only using
 
 ## Table of Contents
 
-- [Fine-tuning Qwen2-VL Series](#fine-tuning-qwen2-vl-series)
+- [Fine-tuning Qwen-VL Series](#fine-tuning-qwen-vl-series)
   - [Other projects](#other-projects)
   - [Update](#update)
   - [Table of Contents](#table-of-contents)
@@ -58,6 +59,10 @@ and [Qwen3-VL](https://huggingface.co/Qwen/Qwen3-VL-4B-Thinking) with only using
       - [Merge LoRA Weights](#merge-lora-weights)
   - [DPO Finetuning](#dpo-finetuning)
   - [GRPO Finetuning](#grpo-finetuning)
+    - [Prerequisites](#prerequisites)
+  - [Classification Finetuning](#classification-finetuning)
+    - [⚠️This is an experimental feature.](#️this-is-an-experimental-feature)
+      - [Experimental Features](#experimental-features)
   - [Inference](#inference)
     - [Gradio Infernce (WebUI)](#gradio-infernce-webui)
   - [Issue for libcudnn error](#issue-for-libcudnn-error)
@@ -576,6 +581,7 @@ You could see this [issue](https://github.com/andimarafioti/florence2-finetuning
 - [x] Update the code base to the latest transformers.
 - [x] Add DPO
 - [x] Add GRPO
+- [ ] Support Qwen3-VL-Moe
 
 ## Known Issues
 

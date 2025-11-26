@@ -17,7 +17,7 @@ export PYTHONPATH=src:$PYTHONPATH
 # If you want to set the min pixels and max pixels for Qwen3-VL, You should set as (N * 32 * 32)
 
 deepspeed src/train/train_sft.py \
-    --use_liger False \
+    --use_liger True \
     --deepspeed scripts/zero3_offload.json \
     --model_id $MODEL_NAME \
     --data_path /path/to/your/training/data.json \
