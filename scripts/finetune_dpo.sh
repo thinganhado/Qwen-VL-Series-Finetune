@@ -16,7 +16,7 @@ deepspeed src/train/train_dpo.py \
     --dpo_loss "sigmoid" \
     --precompute_ref_log_probs False \
     --beta 0.1 \
-    --use_liger_kernel True \
+    --use_liger_loss True \
     --deepspeed scripts/zero3_offload.json \
     --model_id $MODEL_NAME \
     --data_path /path/to/your/training/data.json \

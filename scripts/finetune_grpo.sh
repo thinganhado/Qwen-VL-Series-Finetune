@@ -8,7 +8,7 @@ export PYTHONPATH=src:$PYTHONPATH
 
 deepspeed src/train/train_grpo.py \
     --deepspeed scripts/zero3.json \
-    --use_liger_kernel True \
+    --use_liger_loss True \
     --model_id $MODEL_NAME \
     --data_path /path/to/your/training/data.json \
     --image_folder /path/to/your/image/folder \

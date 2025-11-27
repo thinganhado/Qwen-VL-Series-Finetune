@@ -95,7 +95,7 @@ class QwenDPOTrainer(DPOTrainer):
         return concatenated_batch
     
 
-    def concatenated_forward(self, model: nn.Module, batch: dict[str, Union[list, torch.LongTensor]]):
+    def concatenated_forward(self, model, batch, is_ref_model:bool=False):
 
         num_examples = batch['prompt_input_ids'].shape[0]
         
@@ -176,7 +176,7 @@ class QwenDPOTrainer(DPOTrainer):
                 torch.flatten(chosen_logits, end_dim=1), torch.flatten(chosen_labels, end_dim=1), ignore_index=0
             )
 
-        if self.loss_type == "ipo":
+        if "ipo" in self.loss_type:
             all_logps = all_logps / loss_mask.sum(-1)
 
         output["chosen_logps"] = all_logps[:num_examples]
