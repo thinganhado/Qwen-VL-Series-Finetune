@@ -7,7 +7,8 @@ from transformers import (
     AutoProcessor, 
     AutoConfig, 
     Qwen2_5_VLForConditionalGeneration,
-    Qwen3VLForConditionalGeneration
+    Qwen3VLForConditionalGeneration,
+    Qwen3VLMoeForConditionalGeneration
 )
 import warnings
 import os
@@ -55,9 +56,11 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             del lora_cfg_pretrained.quantization_config
         processor = AutoProcessor.from_pretrained(model_base)
         print('Loading Qwen2-VL from base model...')
-        if "Qwen3" in model_base:
+        if lora_cfg_pretrained.model_type == "qwen3_vl_moe":
+            model = Qwen3VLMoeForConditionalGeneration.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
+        elif lora_cfg_pretrained.model_type == "qwen3_vl":
             model = Qwen3VLForConditionalGeneration.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
-        elif "Qwen2.5" in model_base:
+        elif lora_cfg_pretrained.model_type == "qwen2_5_vl":
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
         else:
             model = Qwen2VLForConditionalGeneration.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
@@ -90,10 +93,12 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
 
         processor = AutoProcessor.from_pretrained(model_path)
         
-        architecture = config.get("architectures", [None])[0]
-        if "Qwen3" in architecture:
+        architecture = config.get("model_type", [None])[0]
+        if "qwen3_vl_moe" in architecture:
+            model = Qwen3VLMoeForConditionalGeneration.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
+        elif "qwen3_vl" in architecture:
             model = Qwen3VLForConditionalGeneration.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
-        elif "Qwen2_5" in architecture:
+        elif "qwen2_5_vl" in architecture:
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
         else:
             model = Qwen2VLForConditionalGeneration.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)

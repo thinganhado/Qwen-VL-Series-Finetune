@@ -14,8 +14,9 @@ and [Qwen3-VL](https://huggingface.co/Qwen/Qwen3-VL-4B-Thinking) with only using
 
 ## Update
 
+- [2025/11/27] 🔥**Update for Qwen3-VL-MoE**
 - [2025/11/26] Update support for liger-kernel in Qwen3-VL.
-- [2025/10/16] 🔥**Update for Qwen3-VL(non-moe) and `transformers==4.57.0`**
+- [2025/10/16] 🔥**Update for Qwen3-VL(non-moe)**
 - [2025/10/13] **Update GRPO for `trl==0.23.1`**
 - [2025/09/12] 🔥**Update for `transformers==4.56.1` and torch==`2.8.0`**
 - [2025/08/21] Add option for using 2-layer mlp for classification.
@@ -581,7 +582,8 @@ You could see this [issue](https://github.com/andimarafioti/florence2-finetuning
 - [x] Update the code base to the latest transformers.
 - [x] Add DPO
 - [x] Add GRPO
-- [ ] Support Qwen3-VL-Moe
+- [x] Support Qwen3-VL(non-moe)
+- [x] Support Qwen3-VL-Moe
 
 ## Known Issues
 

@@ -16,13 +16,15 @@ GRAD_ACCUM_STEPS=$((GLOBAL_BATCH_SIZE / (BATCH_PER_DEVICE * NUM_DEVICES)))
 # If you want to tune the `embed_token` with LoRA, You need to tune `lm_head` together
 # You should freeze the the merger also, becuase the merger is included in the vision_tower.
 
+# Please set the gradient_checkpointing to False when you are using LoRA with vision models.
+
 deepspeed src/train/train_sft.py \
-    --use_liger True \
+    --use_liger_kernel True \
     --lora_enable True \
     --vision_lora True \
     --use_dora False \
     --lora_namespan_exclude "['lm_head', 'embed_tokens']" \
-    --lora_rank 64 \
+    --lora_rank 32 \
     --lora_alpha 64 \
     --lora_dropout 0.05 \
     --num_lora_modules -1 \
@@ -49,7 +51,7 @@ deepspeed src/train/train_sft.py \
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
     --tf32 True \
-    --gradient_checkpointing True \
+    --gradient_checkpointing False \
     --report_to tensorboard \
     --lazy_preprocess True \
     --save_strategy "steps" \

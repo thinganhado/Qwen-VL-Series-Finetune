@@ -19,11 +19,11 @@ GRAD_ACCUM_STEPS=$((GLOBAL_BATCH_SIZE / (BATCH_PER_DEVICE * NUM_DEVICES)))
 # If you want to set the min pixels and max pixels for Qwen3-VL, You should set as (N * 32 * 32)
 
 deepspeed src/train/train_sft.py \
-    --use_liger True \
+    --use_liger_kernel True \
     --lora_enable True \
     --use_dora False \
     --lora_namespan_exclude "['lm_head', 'embed_tokens']" \
-    --lora_rank 64 \
+    --lora_rank 32 \
     --lora_alpha 64 \
     --lora_dropout 0.05 \
     --num_lora_modules -1 \

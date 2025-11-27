@@ -3,23 +3,25 @@ import torch
 from peft import LoraConfig, get_peft_model
 import ast
 from transformers import (
-    AutoProcessor, 
+    AutoProcessor,
+    AutoConfig,
     BitsAndBytesConfig,
     Qwen2VLForConditionalGeneration, 
     HfArgumentParser, 
     Qwen2_5_VLForConditionalGeneration,
-    Qwen3VLForConditionalGeneration
+    Qwen3VLForConditionalGeneration,
+    Qwen3VLMoeForConditionalGeneration
 )
 from src.trainer import QwenDPOTrainer
 from src.dataset import make_dpo_data_module
 from src.params import DataArguments, ModelArguments, DPOArguments
 from train.train_utils import get_peft_state_maybe_zero_3, get_peft_state_non_lora_maybe_zero_3, safe_save_model_for_hf_trainer
 import pathlib
-from liger_kernel.transformers import apply_liger_kernel_to_qwen2_vl, apply_liger_kernel_to_qwen2_5_vl, apply_liger_kernel_to_qwen3_vl
 from monkey_patch_forward import (
     replace_qwen2_5_with_mixed_modality_forward, 
     replace_qwen_2_with_mixed_modality_forward,
-    replace_qwen3_with_mixed_modality_forward
+    replace_qwen3_with_mixed_modality_forward,
+    replace_qwen3_vl_moe_with_mixed_modality_forward
 )
 from monkey_patch_vision import replace_qwen2_5_vision
 
@@ -90,29 +92,6 @@ def train():
         (ModelArguments, DataArguments, DPOArguments))
     
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-    use_liger = training_args.use_liger
-    if "Qwen2.5" in model_args.model_id:
-        # monkey patch the vision model
-        replace_qwen2_5_vision()
-        # It monkey patches the forward to handle mixed modality inputs.
-        replace_qwen2_5_with_mixed_modality_forward()
-        # This is becuase mixed-modality training monkey-patches the model forward method.
-        if use_liger:
-            apply_liger_kernel_to_qwen2_5_vl()
-    
-    elif "Qwen3" in model_args.model_id:
-        # It monkey patches the forward to handle mixed modality inputs.
-        replace_qwen3_with_mixed_modality_forward()
-        # This is becuase mixed-modality training monkey-patches the model forward method.
-        if use_liger:
-            apply_liger_kernel_to_qwen3_vl()
-    
-    else:
-        # It monkey patches the forward to handle mixed modality inputs.
-        replace_qwen_2_with_mixed_modality_forward()
-        # This is becuase mixed-modality training monkey-patches the model forward method.
-        if use_liger:
-            apply_liger_kernel_to_qwen2_vl()
     
     if data_args.nframes is not None and data_args.fps is not None:
         raise ValueError("You cannot set both `nframes` and `fps` at the same time. Please set only one of them.")
@@ -157,30 +136,32 @@ def train():
 
     ref_model = None
 
-    if "Qwen2.5" in model_args.model_id:
-        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+    config = AutoConfig.from_pretrained(model_args.model_id)
+
+    if config.model_type == "qwen3_vl_moe":
+        replace_qwen3_vl_moe_with_mixed_modality_forward()
+        model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
             model_args.model_id,
-            torch_dtype=compute_dtype,
-            attn_implementation="flash_attention_2" if not training_args.disable_flash_attn2 else "sdpa", 
+            dtype=compute_dtype,
+            attn_implementation="flash_attention_2" if not training_args.disable_flash_attn2 else "sdpa",
             **bnb_model_from_pretrained_args
         )
-
         if not training_args.lora_enable:
-            ref_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            ref_model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
                 model_args.model_id,
                 dtype=compute_dtype,
-                attn_implementation="flash_attention_2" if not training_args.disable_flash_attn2 else "sdpa", 
+                attn_implementation="flash_attention_2" if not training_args.disable_flash_attn2 else "sdpa",
                 **bnb_model_from_pretrained_args
             )
 
-    elif "Qwen3" in model_args.model_id:
+    elif config.model_type == "qwen3_vl":
+        replace_qwen3_with_mixed_modality_forward()
         model = Qwen3VLForConditionalGeneration.from_pretrained(
             model_args.model_id,
             dtype=compute_dtype,
             attn_implementation="flash_attention_2" if not training_args.disable_flash_attn2 else "sdpa",
             **bnb_model_from_pretrained_args
         )
-
         if not training_args.lora_enable:
             ref_model = Qwen3VLForConditionalGeneration.from_pretrained(
                 model_args.model_id,
@@ -189,7 +170,25 @@ def train():
                 **bnb_model_from_pretrained_args
             )
 
+    elif config.model_type == "qwen2_5_vl":
+        replace_qwen2_5_with_mixed_modality_forward()
+        replace_qwen2_5_vision()
+        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            model_args.model_id,
+            dtype=compute_dtype,
+            attn_implementation="flash_attention_2" if not training_args.disable_flash_attn2 else "sdpa", 
+            **bnb_model_from_pretrained_args
+        )
+        if not training_args.lora_enable:
+            ref_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                model_args.model_id,
+                dtype=compute_dtype,
+                attn_implementation="flash_attention_2" if not training_args.disable_flash_attn2 else "sdpa", 
+                **bnb_model_from_pretrained_args
+            )
+        
     else:
+        replace_qwen_2_with_mixed_modality_forward()
         model = Qwen2VLForConditionalGeneration.from_pretrained(
             model_args.model_id,
             dtype=compute_dtype,

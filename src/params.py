@@ -99,7 +99,7 @@ class CLSArguments(HFTrainingArguments):
     head_lr: Optional[float] = None
     lora_namespan_exclude: str = field(default=None, metadata={"help": "List of namespan to exclude for LoRA"})
     num_lora_modules: int = -1
-    use_liger: bool = True
+    use_liger_kernel: bool = True
 
 
 @dataclass
@@ -149,7 +149,7 @@ class TrainingArguments(HFTrainingArguments):
     merger_lr: Optional[float] = None
     lora_namespan_exclude: str = field(default=None, metadata={"help": "List of namespan to exclude for LoRA"})
     num_lora_modules: int = -1
-    use_liger: bool = True
+    use_liger_kernel: bool = True
 
 @dataclass
 class DPOArguments(DPOConfigTRL):
@@ -197,7 +197,7 @@ class DPOArguments(DPOConfigTRL):
     merger_lr: Optional[float] = None
     lora_namespan_exclude: str = field(default=None, metadata={"help": "List of namespan to exclude for LoRA"})
     num_lora_modules: int = -1
-    use_liger: bool = True
+    use_liger_kernel: bool = True
     beta: float = field(
         default=0.1,
         metadata={"help": "The beta value for DPO."}
@@ -264,7 +264,7 @@ class GRPOArguments(GRPOConfigTRL):
     repetition_penalty: float = 1.0
     max_completion_length: int = 256
     max_prompt_length: int = 512
-    use_liger: bool = False
+    use_liger_kernel: bool = True
 
 
 @dataclass
