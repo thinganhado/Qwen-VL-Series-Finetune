@@ -14,11 +14,10 @@ and [Qwen3-VL](https://huggingface.co/Qwen/Qwen3-VL-4B-Thinking) with only using
 
 ## Update
 
-- [2025/11/27] 🔥**Update for Qwen3-VL-MoE**
+- [2025/11/28] 🔥**Supports video training with DPO and GRPO.**
+- [2025/11/27] 🔥**Supports Qwen3-VL-MoE**
 - [2025/11/26] Update support for liger-kernel in Qwen3-VL.
-- [2025/10/16] 🔥**Update for Qwen3-VL(non-moe)**
-- [2025/10/13] **Update GRPO for `trl==0.23.1`**
-- [2025/09/12] 🔥**Update for `transformers==4.56.1` and torch==`2.8.0`**
+- [2025/10/16] 🔥**Supports Qwen3-VL(non-moe)**
 - [2025/08/21] Add option for using 2-layer mlp for classification.
 - [2025/08/21] Add option for unfreeze only few layers for llm and vision tower.
 - [2025/08/08] 🔥Monkey patch Qwen2.5-VL's window attention and forward for using less memory and speedups.
@@ -33,8 +32,6 @@ and [Qwen3-VL](https://huggingface.co/Qwen/Qwen3-VL-4B-Thinking) with only using
 - [2025/01/24] Add option for using DoRA.
 - [2025/01/24] Fix error in LoRA training.
 - [2025/01/18] 🔥Supports mixed-modality data.
-- [2025/01/11] Updated 8-bit training with ms_amp fp8 with opt_level O3.
-- [2024/11/05] Add memory efficient 8-bit training.
 - [2024/09/12] 🔥Now the model is trained using [Liger-Kernel](https://github.com/linkedin/Liger-Kernel).
 - [2024/09/11] Supports setting different learning rates to projector and vision model.
 - [2024/09/11] 🔥Supports multi-image and video training.
