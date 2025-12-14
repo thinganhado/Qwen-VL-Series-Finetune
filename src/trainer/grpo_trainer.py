@@ -49,6 +49,13 @@ class QwenGRPOTrainer(GRPOTrainer):
         device = self.accelerator.device
         mode = "train" if self.model.training else "eval"
 
+        if isinstance(inputs, dict):
+            bsz = len(inputs["prompt"])
+            inputs = [
+                {k: (v[i] if v is not None else None) for k, v in inputs.items()}
+                for i in range(bsz)
+            ]
+
         prompts = [x["prompt"] for x in inputs]
 
         if "images" in inputs[0]:
