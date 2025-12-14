@@ -141,57 +141,24 @@ class QwenSFTTrainer(Trainer):
         # want to save except FullyShardedDDP.
         # assert unwrap_model(model) is self.model, "internal model should be a reference to self.model"
 
-        # Save model checkpoint
-        if self.args.lora_enable:
-            # Skip filesystem writes on non-saving ranks
-            if not self.args.should_save:
-                return
+        super()._save_checkpoint(model, trial)
 
-            checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
+        if not self.args.lora_enable:
+            return
 
-            if self.hp_search_backend is None and trial is None:
-                self.store_flos()
+        checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
+        run_dir = self._get_output_dir(trial=trial)
+        output_dir = os.path.join(run_dir, checkpoint_folder)
+        
+        non_lora = get_peft_state_non_lora_maybe_zero_3(
+            self.model.named_parameters(),
+            require_grad_only=True,  
+        )
 
-            run_dir = self._get_output_dir(trial=trial)
-            output_dir = os.path.join(run_dir, checkpoint_folder)
-            os.makedirs(output_dir, exist_ok=True)
-            self.save_model(output_dir, _internal_call=True)
-            non_lora_weights = get_peft_state_non_lora_maybe_zero_3(self.model.named_parameters(), require_grad_only=False)
-            torch.save(non_lora_weights, os.path.join(output_dir, "non_lora_state_dict.bin"))
 
-            if self.args.save_strategy in [SaveStrategy.STEPS, SaveStrategy.EPOCH] and self.state.best_global_step:
-                best_checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.best_global_step}"
-                best_checkpoint_dir = os.path.join(run_dir, best_checkpoint_folder)
-
-                if os.path.exists(best_checkpoint_dir):
-                    self.state.best_model_checkpoint = best_checkpoint_dir
-
-            if not self.args.save_only_model:
-                # Save optimizer and scheduler
-                self._save_optimizer_and_scheduler(output_dir)
-                self._save_scaler(output_dir)
-                # Save RNG state
-                self._save_rng_state(output_dir)
-
-            # Save the Trainer state
-            if self.args.should_save:
-                # Update `ExportableState` callbacks and `TrainerControl` state to where we are currently
-                for cb in [
-                    cb for cb in self.callback_handler.callbacks + [self.control] if isinstance(cb, ExportableState)
-                ]:
-                    cb_name = cb.__class__.__name__
-                    cb_state = cb.state()
-                    if isinstance(self.state.stateful_callbacks[cb_name], list):
-                        self.state.stateful_callbacks[cb_name].append(cb_state)
-                    else:
-                        self.state.stateful_callbacks[cb_name] = cb_state
-                self.state.save_to_json(os.path.join(output_dir, TRAINER_STATE_NAME))
-                self.model.base_model.config.to_json_file(os.path.join(output_dir, "config.json"))
-
-            if self.args.push_to_hub:
-                self._push_from_checkpoint(output_dir)
-        else:
-            super(QwenSFTTrainer, self)._save_checkpoint(model, trial)
+        if self.args.should_save:
+            torch.save(non_lora, os.path.join(output_dir, "non_lora_state_dict.bin"))
+            self.model.base_model.config.to_json_file(os.path.join(output_dir, "config.json"))
 
     # def training_step(self, model, inputs, num_items_in_batch):
         
