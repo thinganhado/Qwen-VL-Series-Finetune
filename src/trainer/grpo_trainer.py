@@ -11,7 +11,8 @@ from transformers.trainer import (
     PREFIX_CHECKPOINT_DIR,
     logger,
     ExportableState,
-    SaveStrategy
+    SaveStrategy,
+    Trainer,
 )
 from transformers.pytorch_utils import (
     ALL_LAYERNORM_LAYERS
@@ -31,9 +32,16 @@ from accelerate.utils import gather_object, is_peft_model
 from src.train.train_utils import get_peft_state_non_lora_maybe_zero_3
 
 
+def _identity_collator(features):
+    """Identity collator that passes data through unchanged."""
+    return features
+
+
 class QwenGRPOTrainer(GRPOTrainer):
     def __init__(self, *args, **kwargs):
         super(QwenGRPOTrainer, self).__init__(*args, **kwargs)
+        # Override data_collator to prevent any data processing
+        self.data_collator = _identity_collator
 
     def _set_signature_columns_if_needed(self):
         # If `self.args.remove_unused_columns` is True, non-signature columns are removed.
@@ -43,18 +51,126 @@ class QwenGRPOTrainer(GRPOTrainer):
         if self._signature_columns is None:
             self._signature_columns = ["prompt", "assistant", "image", "images", "video", "videos", "video_kwargs"]
 
+    def _generate_single_turn(self, prompts: list):
+        """Override to include images/videos in generation for multimodal models."""
+        from contextlib import nullcontext
+        from trl.models.utils import unwrap_model_for_generation
+        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+
+        device = self.accelerator.device
+
+        # Get stored images/videos
+        images = getattr(self, '_current_images', None)
+        videos = getattr(self, '_current_videos', None)
+        video_kwargs = getattr(self, '_current_video_kwargs', None)
+
+        model_id = getattr(self.model.config, "_name_or_path", "")
+
+        # Build processor kwargs
+        processor_kwargs = {
+            "text": prompts,
+            "return_tensors": "pt",
+            "padding": True,
+            "padding_side": "left",
+            "max_length": self.max_prompt_length,
+            "truncation": True,
+            "add_special_tokens": False,
+        }
+
+        # Add images if available
+        if images is not None:
+            processor_kwargs["images"] = images
+            processor_kwargs["do_resize"] = False
+
+        # Add videos if available
+        if videos is not None:
+            if "Qwen2.5" in model_id:
+                processor_kwargs["videos"] = videos
+                if video_kwargs and video_kwargs[0] is not None:
+                    processor_kwargs.update(video_kwargs[0])
+            elif "Qwen3" in model_id:
+                batched_video_datas = []
+                batched_video_metadatas = []
+                for sample_videos in videos:
+                    if sample_videos is None:
+                        batched_video_datas.append(None)
+                        batched_video_metadatas.append(None)
+                    else:
+                        datas, metas = zip(*sample_videos)
+                        batched_video_datas.append(list(datas))
+                        batched_video_metadatas.append(list(metas))
+                processor_kwargs["videos"] = batched_video_datas
+                processor_kwargs["video_metadata"] = batched_video_metadatas
+                if video_kwargs and video_kwargs[0] is not None:
+                    processor_kwargs.update(video_kwargs[0])
+            else:
+                processor_kwargs["videos"] = videos
+
+        # Process inputs
+        generate_inputs = self.processing_class(**processor_kwargs)
+        generate_inputs = Trainer._prepare_inputs(self, generate_inputs)
+
+        # Generate completions
+        with (
+            unwrap_model_for_generation(
+                self.model_wrapped, self.accelerator, gather_deepspeed3_params=self.args.ds3_gather_for_generation
+            ) as unwrapped_model,
+            torch.no_grad(),
+            FSDP.summon_full_params(self.model_wrapped, recurse=False) if self.is_fsdp_enabled else nullcontext(),
+        ):
+            prompt_completion_ids = unwrapped_model.generate(
+                **generate_inputs, generation_config=self.generation_config, disable_compile=True
+            )
+
+        # Extract prompt and completion ids
+        prompt_ids, prompt_mask = generate_inputs["input_ids"], generate_inputs["attention_mask"]
+        prompt_length = prompt_ids.size(1)
+        completion_ids = prompt_completion_ids[:, prompt_length:]
+
+        # Mask everything after the first EOS token
+        is_eos = completion_ids == self.eos_token_id
+        eos_idx = torch.full((is_eos.size(0),), is_eos.size(1), dtype=torch.long, device=device)
+        eos_idx[is_eos.any(dim=1)] = is_eos.int().argmax(dim=1)[is_eos.any(dim=1)]
+        sequence_indices = torch.arange(is_eos.size(1), device=device).expand(is_eos.size(0), -1)
+        completion_mask = (sequence_indices <= eos_idx.unsqueeze(1)).int()
+
+        prompt_ids = [p[m].tolist() for p, m in zip(prompt_ids, prompt_mask.bool(), strict=True)]
+        completion_ids = [c[m].tolist() for c, m in zip(completion_ids, completion_mask.bool(), strict=True)]
+
+        return prompt_ids, completion_ids, None, {}
+
     def _generate_and_score_completions(
         self, inputs: list[dict[str, torch.Tensor | Any]]
     ) -> dict[str, torch.Tensor | Any]:
         device = self.accelerator.device
         mode = "train" if self.model.training else "eval"
 
+        # Handle different input formats:
+        # 1. List of dicts: [{"prompt": ..., "images": ...}, ...]
+        # 2. Batched dict with "prompt" key: {"prompt": [...], "images": [...]}
+        # 3. Already processed BatchFeature (no "prompt" key): error case
         if isinstance(inputs, dict):
-            bsz = len(inputs["prompt"])
-            inputs = [
-                {k: (v[i] if v is not None else None) for k, v in inputs.items()}
-                for i in range(bsz)
-            ]
+            if "prompt" in inputs:
+                # Batched dict format - convert to list of dicts
+                bsz = len(inputs["prompt"])
+                inputs = [
+                    {k: (v[i] if v is not None else None) for k, v in inputs.items()}
+                    for i in range(bsz)
+                ]
+            else:
+                # Already processed BatchFeature - this shouldn't happen in normal flow
+                raise ValueError(
+                    f"Received pre-processed inputs with keys {list(inputs.keys())}. "
+                    "Expected raw inputs with 'prompt' key. This may indicate the data "
+                    "is being processed by the AutoProcessor before reaching the trainer. "
+                    "Ensure you're passing data_collator=identity_collator to the trainer."
+                )
+        elif not isinstance(inputs, list):
+            # Unexpected input type
+            raise TypeError(
+                f"Expected inputs to be list[dict] or dict, got {type(inputs).__name__}. "
+                f"Sample: {str(inputs)[:200]}"
+            )
 
         prompts = [x["prompt"] for x in inputs]
 
@@ -77,12 +193,22 @@ class QwenGRPOTrainer(GRPOTrainer):
         else:
             videos = None
 
-        if videos is not None and all(v_list == [] for v_list in videos):
+        if videos is not None and all(v_list is None or v_list == [] for v_list in videos):
             videos = None
+
+        # Store images/videos for use in _generate_single_turn
+        self._current_images = images
+        self._current_videos = videos
+        self._current_video_kwargs = video_kwargs if videos is not None else None
 
         prompt_ids_list, completion_ids_list, num_items_in_batch, sampling_per_token_logps_list, extra_fields = (
             self._generate(prompts)
         )
+
+        # Clear stored images/videos
+        self._current_images = None
+        self._current_videos = None
+        self._current_video_kwargs = None
 
         # Convert lists of token IDs to padded tensors
         prompt_ids = [torch.tensor(ids, device=device) for ids in prompt_ids_list]
@@ -158,7 +284,8 @@ class QwenGRPOTrainer(GRPOTrainer):
                     processor_kwargs["videos"] = videos
 
             prompt_inputs = self.processing_class(**processor_kwargs)
-            prompt_inputs = super()._prepare_inputs(prompt_inputs)
+            # Use Trainer._prepare_inputs directly to avoid recursive call through GRPOTrainer._prepare_inputs
+            prompt_inputs = Trainer._prepare_inputs(self, prompt_inputs)
             forward_kwargs = {k: v for k, v in prompt_inputs.items() if k not in ["input_ids", "attention_mask"]}
         else:
             forward_kwargs = {}
