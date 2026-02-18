@@ -10,7 +10,9 @@ DEFAULT_OUTPUT_CSV = (
 
 
 def _region_sort_key(x: str):
-    return int(x) if x.isdigit() else x
+    if x.isdigit():
+        return (0, int(x))
+    return (1, x)
 
 
 def _load_sample_to_regions(csv_path: Path) -> dict[str, set[str]]:
@@ -26,8 +28,8 @@ def _load_sample_to_regions(csv_path: Path) -> dict[str, set[str]]:
     return sample_to_regions
 
 
-def _load_sample_to_ordered_regions(order_csv: Path) -> dict[str, list[str]]:
-    sample_to_rows = defaultdict(list)
+def _load_sample_region_diff(order_csv: Path) -> dict[str, dict[str, float]]:
+    sample_to_region_diff = defaultdict(dict)
     with order_csv.open("r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -41,51 +43,30 @@ def _load_sample_to_ordered_regions(order_csv: Path) -> dict[str, list[str]]:
             except ValueError:
                 # Missing/invalid diff gets lowest priority.
                 diff = float("-inf")
-            rid_for_tie = int(region_id) if region_id.isdigit() else region_id
-            sample_to_rows[sample_id].append((region_id, diff, rid_for_tie))
-
-    sample_to_ordered_regions = {}
-    for sample_id, rows in sample_to_rows.items():
-        # Order by diff descending, then smaller region_id first on ties.
-        rows_sorted = sorted(rows, key=lambda x: (-x[1], x[2]))
-        ordered_unique = []
-        seen = set()
-        for region_id, _, _ in rows_sorted:
-            if region_id in seen:
-                continue
-            seen.add(region_id)
-            ordered_unique.append(region_id)
-        sample_to_ordered_regions[sample_id] = ordered_unique
-    return sample_to_ordered_regions
+            old = sample_to_region_diff[sample_id].get(region_id, float("-inf"))
+            # If duplicate rows exist for same sample/region, keep highest diff.
+            if diff > old:
+                sample_to_region_diff[sample_id][region_id] = diff
+    return sample_to_region_diff
 
 
-def _validate_region_sets(
+def _validate_diff_coverage(
     original_map: dict[str, set[str]],
-    order_map: dict[str, list[str]],
-) -> tuple[bool, dict[str, list[str]], dict[str, list[str]], dict[str, tuple[list[str], list[str]]]]:
-    missing_in_order = {}
-    extra_in_order = {}
-    mismatched_sets = {}
+    diff_map: dict[str, dict[str, float]],
+) -> tuple[bool, dict[str, list[str]], dict[str, list[str]]]:
+    missing_samples = {}
+    missing_regions = {}
 
-    original_keys = set(original_map.keys())
-    order_keys = set(order_map.keys())
+    for sample_id in sorted(original_map.keys()):
+        if sample_id not in diff_map:
+            missing_samples[sample_id] = sorted(original_map[sample_id], key=_region_sort_key)
+            continue
+        missing = [rid for rid in sorted(original_map[sample_id], key=_region_sort_key) if rid not in diff_map[sample_id]]
+        if missing:
+            missing_regions[sample_id] = missing
 
-    for sample_id in sorted(original_keys - order_keys):
-        missing_in_order[sample_id] = sorted(original_map[sample_id], key=_region_sort_key)
-    for sample_id in sorted(order_keys - original_keys):
-        extra_in_order[sample_id] = sorted(set(order_map[sample_id]), key=_region_sort_key)
-
-    for sample_id in sorted(original_keys & order_keys):
-        original_set = set(original_map[sample_id])
-        order_set = set(order_map[sample_id])
-        if original_set != order_set:
-            mismatched_sets[sample_id] = (
-                sorted(original_set, key=_region_sort_key),
-                sorted(order_set, key=_region_sort_key),
-            )
-
-    ok = not missing_in_order and not extra_in_order and not mismatched_sets
-    return ok, missing_in_order, extra_in_order, mismatched_sets
+    ok = not missing_samples and not missing_regions
+    return ok, missing_samples, missing_regions
 
 
 def parse_args():
@@ -130,8 +111,8 @@ def parse_args():
         "--check-against-csv",
         default=None,
         help=(
-            "Optional original CSV for region-set validation before writing output. "
-            "If provided together with --order-csv, each sample must have identical region sets."
+            "Optional original CSV for validation before writing output. "
+            "If provided with --order-csv, every original (sample_id, region_id) must exist in order CSV."
         ),
     )
     parser.add_argument(
@@ -152,51 +133,47 @@ def main():
 
     sample_to_regions = _load_sample_to_regions(region_csv)
 
-    sample_to_ordered_regions = None
+    sample_to_region_diff = None
     if args.order_csv:
         order_csv = Path(args.order_csv)
-        sample_to_ordered_regions = _load_sample_to_ordered_regions(order_csv)
+        sample_to_region_diff = _load_sample_region_diff(order_csv)
 
-    if args.check_against_csv and sample_to_ordered_regions is not None:
+    if args.check_against_csv and sample_to_region_diff is not None:
         check_csv = Path(args.check_against_csv)
         original_map = _load_sample_to_regions(check_csv)
-        ok, missing_in_order, extra_in_order, mismatched_sets = _validate_region_sets(
+        ok, missing_samples, missing_regions = _validate_diff_coverage(
             original_map=original_map,
-            order_map=sample_to_ordered_regions,
+            diff_map=sample_to_region_diff,
         )
         print(
-            "[check] region-set consistency:",
+            "[check] diff-coverage consistency:",
             "PASS" if ok else "FAIL",
-            f"(missing={len(missing_in_order)}, extra={len(extra_in_order)}, mismatch={len(mismatched_sets)})",
+            f"(missing_samples={len(missing_samples)}, missing_regions={len(missing_regions)})",
         )
 
         # Print a few examples for fast debugging on cluster logs.
         max_show = 10
-        if missing_in_order:
-            print("[check] examples missing_in_order:")
-            for sample_id in list(missing_in_order.keys())[:max_show]:
-                print(f"  {sample_id}: expected={missing_in_order[sample_id]}")
-        if extra_in_order:
-            print("[check] examples extra_in_order:")
-            for sample_id in list(extra_in_order.keys())[:max_show]:
-                print(f"  {sample_id}: got={extra_in_order[sample_id]}")
-        if mismatched_sets:
-            print("[check] examples mismatched_sets:")
-            for sample_id in list(mismatched_sets.keys())[:max_show]:
-                exp, got = mismatched_sets[sample_id]
-                print(f"  {sample_id}: expected={exp} got={got}")
+        if missing_samples:
+            print("[check] examples missing_samples:")
+            for sample_id in list(missing_samples.keys())[:max_show]:
+                print(f"  {sample_id}: expected_regions={missing_samples[sample_id]}")
+        if missing_regions:
+            print("[check] examples missing_regions:")
+            for sample_id in list(missing_regions.keys())[:max_show]:
+                print(f"  {sample_id}: missing_regions={missing_regions[sample_id]}")
 
         if (not ok) and args.fail_on_mismatch:
-            raise SystemExit("Region-set validation failed.")
+            raise SystemExit("Diff-coverage validation failed.")
 
     rows = []
     dropped = 0
     for sample_id, region_set in sample_to_regions.items():
-        if sample_to_ordered_regions is not None and sample_id in sample_to_ordered_regions:
-            region_list = [rid for rid in sample_to_ordered_regions[sample_id] if rid in region_set]
-            # Safety fallback if order CSV misses some IDs despite validation disabled.
-            missing_ids = [rid for rid in sorted(region_set, key=_region_sort_key) if rid not in set(region_list)]
-            region_list.extend(missing_ids)
+        if sample_to_region_diff is not None:
+            region_diff = sample_to_region_diff.get(sample_id, {})
+            region_list = sorted(
+                region_set,
+                key=lambda rid: (-region_diff.get(rid, float("-inf")), _region_sort_key(rid)),
+            )
         else:
             region_list = sorted(region_set, key=_region_sort_key)
         if args.strict_three and len(region_list) != 3:
