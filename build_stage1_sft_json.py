@@ -27,6 +27,26 @@ def parse_args():
     parser.add_argument("--val-json", default=None, help="Val split JSON path")
     parser.add_argument("--val-ratio", type=float, default=0.1, help="Validation ratio in split mode")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for split mode")
+    parser.add_argument(
+        "--split-by-path",
+        action="store_true",
+        help="Split train/val by img_path substring keys instead of random split.",
+    )
+    parser.add_argument(
+        "--train-key",
+        default="_LA_T_",
+        help="Substring in img_path that routes a sample to train when --split-by-path is used.",
+    )
+    parser.add_argument(
+        "--val-key",
+        default="_LA_D_",
+        help="Substring in img_path that routes a sample to val when --split-by-path is used.",
+    )
+    parser.add_argument(
+        "--strict-path-split",
+        action="store_true",
+        help="If set with --split-by-path, drop samples that match neither key.",
+    )
     return parser.parse_args()
 
 
@@ -72,6 +92,7 @@ def main():
     image_folder = Path(args.image_folder) if args.image_folder else None
 
     records = []
+    path_aware_rows = []
     with input_csv.open("r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for idx, row in enumerate(reader):
@@ -79,15 +100,37 @@ def main():
             regions = str(row["regions"]).strip()
             target = to_target(regions, json_array_target=args.json_array_target)
             image_field = maybe_relpath(img_path, image_folder)
-            records.append(build_record(idx=idx, img_path=image_field, target=target, user_prompt=args.user_prompt))
+            rec = build_record(idx=idx, img_path=image_field, target=target, user_prompt=args.user_prompt)
+            records.append(rec)
+            path_aware_rows.append((str(img_path), rec))
 
     split_mode = args.train_json is not None and args.val_json is not None
     if split_mode:
-        random.seed(args.seed)
-        random.shuffle(records)
-        n_val = int(len(records) * args.val_ratio)
-        val_data = records[:n_val]
-        train_data = records[n_val:]
+        if args.split_by_path:
+            train_data = []
+            val_data = []
+            unmatched = []
+            for raw_img_path, rec in path_aware_rows:
+                if args.train_key in raw_img_path:
+                    train_data.append(rec)
+                elif args.val_key in raw_img_path:
+                    val_data.append(rec)
+                else:
+                    unmatched.append(rec)
+
+            if unmatched and not args.strict_path_split:
+                train_data.extend(unmatched)
+
+            print(f"Path split keys: train='{args.train_key}', val='{args.val_key}'")
+            print(f"Unmatched samples: {len(unmatched)}")
+            if args.strict_path_split and unmatched:
+                print("Dropped unmatched samples due to --strict-path-split")
+        else:
+            random.seed(args.seed)
+            random.shuffle(records)
+            n_val = int(len(records) * args.val_ratio)
+            val_data = records[:n_val]
+            train_data = records[n_val:]
         train_path = Path(args.train_json)
         val_path = Path(args.val_json)
         write_json(train_path, train_data)
