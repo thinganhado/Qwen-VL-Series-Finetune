@@ -10,8 +10,22 @@ fi
 MODEL_ID="$1"
 CONFIG_JSON="${2:-configs/stage1_sft_lora_config.json}"
 MODEL_TAG="$(basename "${MODEL_ID%/}")"
+RUN_ROOT="/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/baseline_SFT"
 
 export PYTHONPATH=src:${PYTHONPATH:-}
+mkdir -p "${RUN_ROOT}"
+
+# Force all caches under RUN_ROOT to avoid home quota issues.
+export XDG_CACHE_HOME="${RUN_ROOT}/cache/xdg"
+export TRITON_CACHE_DIR="${RUN_ROOT}/cache/triton"
+export HF_HOME="${RUN_ROOT}/cache/huggingface"
+export TORCH_HOME="${RUN_ROOT}/cache/torch"
+export TRANSFORMERS_CACHE="${RUN_ROOT}/cache/huggingface/transformers"
+mkdir -p "${TRITON_CACHE_DIR}"
+mkdir -p "${HF_HOME}"
+mkdir -p "${TORCH_HOME}"
+mkdir -p "${TRANSFORMERS_CACHE}"
+mkdir -p "${XDG_CACHE_HOME}"
 
 BASE_OUTPUT_DIR="$(
 python - "$CONFIG_JSON" <<'PY'
@@ -26,6 +40,7 @@ PY
 )"
 
 RUN_OUTPUT_DIR="${BASE_OUTPUT_DIR}_${MODEL_TAG}"
+RUN_OUTPUT_DIR="${RUN_ROOT}/$(basename "${RUN_OUTPUT_DIR}")"
 
 if command -v deepspeed >/dev/null 2>&1; then
   DS_LAUNCHER="deepspeed"
