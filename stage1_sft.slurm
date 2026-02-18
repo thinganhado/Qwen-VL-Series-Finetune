@@ -15,8 +15,24 @@ RUN_ROOT=/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/baseli
 mkdir -p "${RUN_ROOT}/logs"
 cd "${REPO}"
 
-source /scratch3/che489/Ha/.conda/etc/profile.d/conda.sh
-conda activate deepfake
+# --- Conda init (robust) ---
+if command -v conda >/dev/null 2>&1; then
+  eval "$(conda shell.bash hook)"
+elif [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
+  source "$HOME/miniconda3/etc/profile.d/conda.sh"
+elif [ -f "$HOME/anaconda3/etc/profile.d/conda.sh" ]; then
+  source "$HOME/anaconda3/etc/profile.d/conda.sh"
+else
+  echo "ERROR: conda.sh not found. Set correct path in stage1_sft.slurm."
+  exit 1
+fi
+
+conda activate deepfake || {
+  echo "ERROR: failed to activate env 'deepfake'"
+  conda env list
+  exit 1
+}
+
 source scripts/env_baseline_sft.sh
 
 if [ -z "${MODEL_ID:-}" ]; then
