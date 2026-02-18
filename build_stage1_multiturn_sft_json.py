@@ -10,7 +10,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description=(
             "Convert CSV (img_path,regions,transcript,explanations) to LLaVA-format "
-            "multi-turn SFT JSON (turn1 prediction + turn2 explanation)."
+            "multi-turn SFT JSON. Turn-1 assistant target is GT regions by default."
         )
     )
     parser.add_argument(
@@ -20,6 +20,25 @@ def parse_args():
     )
     parser.add_argument("--output-json", default=None, help="Output JSON path (single file mode)")
     parser.add_argument("--image-folder", default=None, help="If set, store image path relative to this folder")
+
+    parser.add_argument(
+        "--turn1-target-column",
+        default="regions",
+        help="CSV column used as turn-1 assistant target (GT regions).",
+    )
+    parser.add_argument(
+        "--turn2-regions-column",
+        default="",
+        help=(
+            "Optional CSV column to use for turn-2 region context. "
+            "If empty, uses turn-1 target column."
+        ),
+    )
+    parser.add_argument(
+        "--require-turn1-target",
+        action="store_true",
+        help="Fail if turn-1 target column is missing/empty for any row.",
+    )
 
     parser.add_argument(
         "--turn1-system-prompt",
@@ -55,7 +74,7 @@ def parse_args():
         default=(
             "{turn2_user_prompt}\n"
             "Transcript: {transcript}\n"
-            "Predicted regions: {prompt1_output}"
+            "Selected regions: {prompt1_output}"
         ),
         help=(
             "Template for turn-2 user message body. Supported placeholders: "
@@ -129,7 +148,8 @@ def compose_user_turn(system_prompt: str, user_body: str) -> str:
 def build_record(
     idx: int,
     img_path: str,
-    prompt1_output: str,
+    turn1_target: str,
+    turn2_regions_context: str,
     transcript: str,
     explanation: str,
     turn1_system_prompt: str,
@@ -149,7 +169,7 @@ def build_record(
         {
             "turn2_user_prompt": turn2_user_prompt,
             "transcript": transcript,
-            "prompt1_output": prompt1_output,
+            "prompt1_output": turn2_regions_context,
             "sample_id": sample_id,
         }
     )
@@ -163,7 +183,7 @@ def build_record(
         "image": img_path,
         "conversations": [
             {"from": "human", "value": f"<image>\n{turn1_user}"},
-            {"from": "gpt", "value": prompt1_output},
+            {"from": "gpt", "value": turn1_target},
             {"from": "human", "value": f"<image>\n{turn2_user}"},
             {"from": "gpt", "value": explanation},
         ],
@@ -191,17 +211,30 @@ def main():
             if not str(img_path):
                 continue
 
-            regions = str(row.get("regions", "")).strip()
+            turn1_raw = str(row.get(args.turn1_target_column, "")).strip()
+            if not turn1_raw:
+                msg = f"Missing turn1 target in column '{args.turn1_target_column}' at row {idx + 2}."
+                if args.require_turn1_target:
+                    raise ValueError(msg)
+                continue
+
+            if args.turn2_regions_column:
+                turn2_raw = str(row.get(args.turn2_regions_column, "")).strip() or turn1_raw
+            else:
+                turn2_raw = turn1_raw
+
             transcript = str(row.get("transcript", "")).strip()
             explanation = str(row.get("explanations", "")).strip() or args.explanations_default
 
-            prompt1_output = normalize_regions(regions, as_json_array=args.json_array_regions)
+            turn1_target = normalize_regions(turn1_raw, as_json_array=args.json_array_regions)
+            turn2_regions_context = normalize_regions(turn2_raw, as_json_array=args.json_array_regions)
             image_field = maybe_relpath(img_path, image_folder)
 
             rec = build_record(
                 idx=idx,
                 img_path=image_field,
-                prompt1_output=prompt1_output,
+                turn1_target=turn1_target,
+                turn2_regions_context=turn2_regions_context,
                 transcript=transcript,
                 explanation=explanation,
                 turn1_system_prompt=args.turn1_system_prompt,
