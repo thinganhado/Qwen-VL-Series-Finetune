@@ -27,6 +27,16 @@ PY
 
 RUN_OUTPUT_DIR="${BASE_OUTPUT_DIR}_${MODEL_TAG}"
 
+if command -v deepspeed >/dev/null 2>&1; then
+  DS_LAUNCHER="deepspeed"
+elif python -c "import deepspeed" >/dev/null 2>&1; then
+  DS_LAUNCHER="python -m deepspeed"
+else
+  echo "Error: DeepSpeed is not available in this environment."
+  echo "Install with: pip install deepspeed"
+  exit 1
+fi
+
 EXTRA_ARGS="$(
 python - "$CONFIG_JSON" <<'PY'
 import json
@@ -53,6 +63,6 @@ print(" ".join(shlex.quote(x) for x in parts))
 PY
 )"
 
-CMD="deepspeed src/train/train_sft.py --model_id \"$MODEL_ID\" --output_dir \"$RUN_OUTPUT_DIR\" $EXTRA_ARGS"
+CMD="$DS_LAUNCHER src/train/train_sft.py --model_id \"$MODEL_ID\" --output_dir \"$RUN_OUTPUT_DIR\" $EXTRA_ARGS"
 echo "$CMD"
 eval "$CMD"
