@@ -39,6 +39,8 @@ conda activate deepfake || {
 
 source scripts/env_baseline_sft.sh
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1}"
+export RESUME_FROM_CHECKPOINT=""
+export TORCHDYNAMO_DISABLE=1
 
 if [ -z "${MODEL_ID:-}" ]; then
   echo "MODEL_ID is required"
@@ -47,9 +49,20 @@ if [ -z "${MODEL_ID:-}" ]; then
 fi
 
 MODEL_TAG="$(basename "${MODEL_ID%/}")"
+BASE_OUTPUT_DIR="$(
+python - "$CONFIG_JSON" <<'PY'
+import json
+import sys
+with open(sys.argv[1], "r", encoding="utf-8-sig") as f:
+    cfg = json.load(f)
+print(cfg.get("output_dir", "output/stage1_mt_lora"))
+PY
+)"
+RUN_OUTPUT_DIR="/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/baseline_SFT/$(basename "${BASE_OUTPUT_DIR}_${MODEL_TAG}")"
 
 echo "Starting multi-turn SFT model: ${MODEL_ID}"
 echo "Using config: ${CONFIG_JSON}"
+echo "Resolved output dir: ${RUN_OUTPUT_DIR}"
 
 bash scripts/run_stage1_sft_from_config.sh "${MODEL_ID}" "${CONFIG_JSON}" \
   2>&1 | tee "${RUN_ROOT}/logs/train_mt_${MODEL_TAG}_${SLURM_JOB_ID}.log"
