@@ -40,6 +40,20 @@ else
   exit 1
 fi
 
+# Pick an available local TCP port for torch distributed unless user provided one.
+if [ -n "${MASTER_PORT:-}" ]; then
+  DS_MASTER_PORT="${MASTER_PORT}"
+else
+  DS_MASTER_PORT="$(
+python - <<'PY'
+import socket
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s.bind(("127.0.0.1", 0))
+    print(s.getsockname()[1])
+PY
+)"
+fi
+
 EXTRA_ARGS="$(
 python - "$CONFIG_JSON" <<'PY'
 import json
@@ -66,6 +80,6 @@ print(" ".join(shlex.quote(x) for x in parts))
 PY
 )"
 
-CMD="$DS_LAUNCHER src/train/train_sft.py --model_id \"$MODEL_ID\" --output_dir \"$RUN_OUTPUT_DIR\" $EXTRA_ARGS"
+CMD="$DS_LAUNCHER --master_port \"$DS_MASTER_PORT\" src/train/train_sft.py --model_id \"$MODEL_ID\" --output_dir \"$RUN_OUTPUT_DIR\" $EXTRA_ARGS"
 echo "$CMD"
 eval "$CMD"
