@@ -52,7 +52,9 @@ def _iter_json_files(json_dir: Path):
     if json_dir.is_file() and json_dir.suffix.lower() == ".json":
         yield json_dir
         return
-    for p in json_dir.rglob("*.json"):
+    for p in json_dir.rglob("*"):
+        if p.suffix.lower() != ".json":
+            continue
         if p.is_file():
             yield p
 
@@ -103,10 +105,15 @@ def parse_args():
 
 def main():
     args = parse_args()
-    json_dir = Path(args.json_dir)
+    json_dir = Path(args.json_dir).expanduser()
     gt_csv = Path(args.gt_csv)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"[info] json_dir: {json_dir}")
+    print(f"[info] json_dir exists={json_dir.exists()} is_file={json_dir.is_file()} is_dir={json_dir.is_dir()}")
+    if not json_dir.exists():
+        raise SystemExit(f"JSON path does not exist: {json_dir}")
 
     gt_map, gt_duplicates = _load_gt(gt_csv)
     if gt_duplicates:
@@ -184,6 +191,10 @@ def main():
     print(f"Region items extracted: {len(all_items)}")
     print(f"Passing items: {len(passing)}")
     print(f"Saved explanations to: {out_dir}")
+    if json_count == 0 and json_dir.is_dir():
+        print("[hint] No .json files found under --json-dir (recursive).")
+        print("[hint] Verify the folder and file extension, e.g. run:")
+        print(f"[hint] find {json_dir} -type f | head -n 20")
 
     print("")
     print("[missing] summary")
