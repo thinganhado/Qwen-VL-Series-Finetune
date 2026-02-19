@@ -259,8 +259,10 @@ def train():
         **data_module
     )
 
-    if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
-        trainer.train(resume_from_checkpoint=True)
+    # Avoid implicit auto-resume from stale checkpoints (e.g., changed world size).
+    # Resume only when explicitly requested via --resume_from_checkpoint.
+    if getattr(training_args, "resume_from_checkpoint", None):
+        trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
     else:
         trainer.train()
 

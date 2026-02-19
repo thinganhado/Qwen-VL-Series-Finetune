@@ -45,5 +45,6 @@ MODEL_TAG="$(basename "${MODEL_ID%/}")"
 
 echo "Starting model: ${MODEL_ID}"
 echo "Using config: ${CONFIG_JSON}"
+export RESUME_FROM_CHECKPOINT=""
 bash scripts/run_stage1_sft_from_config.sh "${MODEL_ID}" "${CONFIG_JSON}" \
   2>&1 | tee "${RUN_ROOT}/logs/train_${MODEL_TAG}_${SLURM_JOB_ID}.log"
