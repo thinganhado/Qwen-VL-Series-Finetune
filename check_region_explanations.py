@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 DEFAULT_JSON_DIR = (
-    "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/En/polished/shard_0_of_8/hn-sinc-nsf-hifi_LA_D_8894154/json"
+    "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/En/polished"
 )
 DEFAULT_GT_CSV = "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/img/region_phone_table_grid.csv"
 DEFAULT_OUT_DIR = "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/En/explanation"
@@ -49,13 +49,13 @@ def _load_gt(gt_csv: Path):
 
 
 def _iter_json_files(json_dir: Path):
-    if json_dir.is_file() and json_dir.suffix.lower() == ".json":
+    if json_dir.is_file() and (json_dir.suffix.lower() == ".json" or json_dir.name == "json"):
         yield json_dir
         return
     for p in json_dir.rglob("*"):
-        if p.suffix.lower() != ".json":
+        if not p.is_file():
             continue
-        if p.is_file():
+        if p.suffix.lower() == ".json" or p.name == "json":
             yield p
 
 
