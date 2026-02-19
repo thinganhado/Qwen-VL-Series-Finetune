@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 #SBATCH --account=OD-237777
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
