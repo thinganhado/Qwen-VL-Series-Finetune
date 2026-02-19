@@ -85,6 +85,42 @@ def _extract_regions(obj: dict, source_file: Path):
     return out
 
 
+def _write_failing_details_csv(csv_path: Path, failing):
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "sample_id",
+                "region_id",
+                "source_file",
+                "pred_time",
+                "pred_frequency",
+                "pred_phonetic",
+                "gt_time",
+                "gt_frequency",
+                "gt_phonetic",
+                "output_explanation",
+            ],
+        )
+        writer.writeheader()
+        for item, pred, gt_val in failing:
+            writer.writerow(
+                {
+                    "sample_id": item["sample_id"],
+                    "region_id": item["region_id"],
+                    "source_file": item["source_file"],
+                    "pred_time": pred["time"],
+                    "pred_frequency": pred["frequency"],
+                    "pred_phonetic": pred["phonetic"],
+                    "gt_time": gt_val["time"],
+                    "gt_frequency": gt_val["frequency"],
+                    "gt_phonetic": gt_val["phonetic"],
+                    "output_explanation": item["output_explanation"],
+                }
+            )
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
@@ -95,6 +131,16 @@ def parse_args():
     parser.add_argument("--json-dir", default=DEFAULT_JSON_DIR, help=f"JSON file or directory (default: {DEFAULT_JSON_DIR})")
     parser.add_argument("--gt-csv", default=DEFAULT_GT_CSV, help=f"GT CSV path (default: {DEFAULT_GT_CSV})")
     parser.add_argument("--out-dir", default=DEFAULT_OUT_DIR, help=f"Output explanation root (default: {DEFAULT_OUT_DIR})")
+    parser.add_argument(
+        "--failing-details-csv",
+        default=None,
+        help="Optional path for failing details CSV. Default: <out-dir>/failing_details.csv",
+    )
+    parser.add_argument(
+        "--csv-only",
+        action="store_true",
+        help="Suppress terminal output; only write CSV outputs.",
+    )
     parser.add_argument(
         "--require-explanation",
         action="store_true",
@@ -109,88 +155,107 @@ def main():
     gt_csv = Path(args.gt_csv)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    failing_details_csv = Path(args.failing_details_csv) if args.failing_details_csv else (out_dir / "failing_details.csv")
 
-    print(f"[info] json_dir: {json_dir}")
-    print(f"[info] json_dir exists={json_dir.exists()} is_file={json_dir.is_file()} is_dir={json_dir.is_dir()}")
+    if not args.csv_only:
+        print(f"[info] json_dir: {json_dir}")
+        print(f"[info] json_dir exists={json_dir.exists()} is_file={json_dir.is_file()} is_dir={json_dir.is_dir()}")
     if not json_dir.exists():
         raise SystemExit(f"JSON path does not exist: {json_dir}")
 
     gt_map, gt_duplicates = _load_gt(gt_csv)
-    if gt_duplicates:
+    if gt_duplicates and not args.csv_only:
         print(f"[warn] duplicate GT keys found, ignored later rows: {len(gt_duplicates)}")
 
-    all_items = []
     json_count = 0
-    bad_json_files = []
+    bad_json_files = [] if not args.csv_only else None
+    missing_structured = [] if not args.csv_only else None
+    missing_gt = [] if not args.csv_only else None
+    missing_explanation = [] if not args.csv_only else None
+    failing = []
+    passing = [] if not args.csv_only else None
+    passing_count = 0
+    all_items_count = 0
+
+    seen_by_sample = defaultdict(set) if not args.csv_only else None
+    samples_seen = set() if not args.csv_only else None
+
     for jf in _iter_json_files(json_dir):
         json_count += 1
         try:
             obj = json.loads(jf.read_text(encoding="utf-8"))
         except Exception as e:
-            bad_json_files.append((str(jf), str(e)))
-            continue
-        all_items.extend(_extract_regions(obj, jf))
-
-    missing_structured = []
-    missing_gt = []
-    missing_explanation = []
-    failing = []
-    passing = []
-
-    seen_by_sample = defaultdict(set)
-    samples_seen = set()
-
-    for item in all_items:
-        sample_id = item["sample_id"]
-        region_id = item["region_id"]
-        if sample_id:
-            samples_seen.add(sample_id)
-        if sample_id and region_id:
-            seen_by_sample[sample_id].add(region_id)
-
-        os_val = item["output_structured"]
-        if not sample_id or not region_id or not isinstance(os_val, dict):
-            missing_structured.append(item)
+            if not args.csv_only:
+                bad_json_files.append((str(jf), str(e)))
             continue
 
-        gt_key = (sample_id, region_id)
-        gt_val = gt_map.get(gt_key)
-        if gt_val is None:
-            missing_gt.append(item)
-            continue
+        for item in _extract_regions(obj, jf):
+            all_items_count += 1
+            sample_id = item["sample_id"]
+            region_id = item["region_id"]
 
-        pred = {
-            "time": _norm_text(os_val.get("time", "")),
-            "frequency": _norm_text(os_val.get("frequency", "")),
-            "phonetic": _norm_text(os_val.get("phonetic", "")),
-        }
-        ok = pred == gt_val
-        if not ok:
-            failing.append((item, pred, gt_val))
-            continue
+            if not args.csv_only:
+                if sample_id:
+                    samples_seen.add(sample_id)
+                if sample_id and region_id:
+                    seen_by_sample[sample_id].add(region_id)
 
-        if args.require_explanation and not item["output_explanation"]:
-            missing_explanation.append(item)
-            continue
-        passing.append(item)
+            os_val = item["output_structured"]
+            if not sample_id or not region_id or not isinstance(os_val, dict):
+                if not args.csv_only:
+                    missing_structured.append(item)
+                continue
+
+            gt_key = (sample_id, region_id)
+            gt_val = gt_map.get(gt_key)
+            if gt_val is None:
+                if not args.csv_only:
+                    missing_gt.append(item)
+                continue
+
+            pred = {
+                "time": _norm_text(os_val.get("time", "")),
+                "frequency": _norm_text(os_val.get("frequency", "")),
+                "phonetic": _norm_text(os_val.get("phonetic", "")),
+            }
+            ok = pred == gt_val
+            if not ok:
+                failing.append((item, pred, gt_val))
+                continue
+
+            if args.require_explanation and not item["output_explanation"]:
+                if not args.csv_only:
+                    missing_explanation.append(item)
+                continue
+
+            passing_count += 1
+            if not args.csv_only:
+                passing.append(item)
 
     missing_regions_from_json = []
-    for (sample_id, region_id), _ in gt_map.items():
-        if sample_id not in samples_seen:
-            continue
-        if region_id not in seen_by_sample[sample_id]:
-            missing_regions_from_json.append((sample_id, region_id))
+    if not args.csv_only:
+        for (sample_id, region_id), _ in gt_map.items():
+            if sample_id not in samples_seen:
+                continue
+            if region_id not in seen_by_sample[sample_id]:
+                missing_regions_from_json.append((sample_id, region_id))
 
-    for item in passing:
-        sample_dir = out_dir / item["sample_id"]
-        sample_dir.mkdir(parents=True, exist_ok=True)
-        out_file = sample_dir / f"{item['region_id']}.txt"
-        out_file.write_text(item["output_explanation"], encoding="utf-8")
+        for item in passing:
+            sample_dir = out_dir / item["sample_id"]
+            sample_dir.mkdir(parents=True, exist_ok=True)
+            out_file = sample_dir / f"{item['region_id']}.txt"
+            out_file.write_text(item["output_explanation"], encoding="utf-8")
+
+    _write_failing_details_csv(failing_details_csv, failing)
+
+    if args.csv_only:
+        return
 
     print(f"JSON files scanned: {json_count}")
-    print(f"Region items extracted: {len(all_items)}")
-    print(f"Passing items: {len(passing)}")
+    print(f"Region items extracted: {all_items_count}")
+    print(f"Passing items: {passing_count}")
     print(f"Saved explanations to: {out_dir}")
+    print(f"Saved failing details CSV to: {failing_details_csv}")
     if json_count == 0 and json_dir.is_dir():
         print("[hint] No .json files found under --json-dir (recursive).")
         print("[hint] Verify the folder and file extension, e.g. run:")
