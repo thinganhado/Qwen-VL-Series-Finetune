@@ -6,7 +6,7 @@
   "lora_alpha": 64,
   "lora_dropout": 0.05,
   "deepspeed": "scripts/zero3_offload.json",
-  "data_path": "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/baseline_SFT/multiturn/stage1_mt_train.json",
+  "data_path": "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/SFT_2turn/stage1_multiturn_train.json",
   "eval_path": null,
   "image_folder": "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/img/specs/grid",
   "remove_unused_columns": false,

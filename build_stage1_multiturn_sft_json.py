@@ -9,14 +9,14 @@ from pathlib import Path
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Convert CSV (img_path,regions,transcript,explanations) to LLaVA-format "
+            "Convert CSV (img_path,regions,transcript,prompt2_target) to LLaVA-format "
             "multi-turn SFT JSON. Turn-1 assistant target is GT regions by default."
         )
     )
     parser.add_argument(
         "--input-csv",
         required=True,
-        help="CSV with columns: img_path, regions, transcript, explanations(optional)",
+        help="CSV with columns: img_path, regions, transcript, prompt2_target(optional)",
     )
     parser.add_argument("--output-json", default=None, help="Output JSON path (single file mode)")
     parser.add_argument("--image-folder", default=None, help="If set, store image path relative to this folder")
@@ -100,9 +100,17 @@ def parse_args():
         help="Normalize regions into JSON array string, e.g. [1, 2, 3].",
     )
     parser.add_argument(
+        "--turn2-target-column",
+        default="prompt2_target",
+        help=(
+            "CSV column used as turn-2 assistant target. "
+            "Defaults to prompt2_target."
+        ),
+    )
+    parser.add_argument(
         "--explanations-default",
         default="[TODO_EXPLANATION]",
-        help="Fallback explanation text when CSV explanations is empty.",
+        help="Fallback turn-2 target text when CSV turn2 target column is empty.",
     )
 
     parser.add_argument("--train-json", default=None, help="Train split JSON path")
@@ -112,7 +120,14 @@ def parse_args():
     parser.add_argument(
         "--split-by-path",
         action="store_true",
+        default=True,
         help="Split train/val by img_path substring keys instead of random split.",
+    )
+    parser.add_argument(
+        "--no-split-by-path",
+        action="store_false",
+        dest="split_by_path",
+        help="Disable path-key split and use random split mode.",
     )
     parser.add_argument(
         "--train-key",
@@ -236,7 +251,11 @@ def main():
                 turn2_raw = turn1_raw
 
             transcript = str(row.get("transcript", "")).strip()
-            explanation = str(row.get("explanations", "")).strip() or args.explanations_default
+            explanation = str(row.get(args.turn2_target_column, "")).strip()
+            if not explanation and args.turn2_target_column != "explanations":
+                explanation = str(row.get("explanations", "")).strip()
+            if not explanation:
+                explanation = args.explanations_default
 
             turn1_target = normalize_regions(turn1_raw, as_json_array=args.json_array_regions)
             turn2_regions_context = normalize_regions(turn2_raw, as_json_array=args.json_array_regions)
