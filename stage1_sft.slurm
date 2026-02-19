@@ -11,6 +11,7 @@ set -eo pipefail
 
 REPO=/scratch3/che489/Ha/interspeech/training/Qwen-VL-Series-Finetune
 RUN_ROOT=/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/baseline_SFT
+CONFIG_JSON=${CONFIG_JSON:-configs/stage1_sft_lora_config.json}
 
 mkdir -p "${RUN_ROOT}/logs"
 cd "${REPO}"
@@ -43,5 +44,6 @@ fi
 MODEL_TAG="$(basename "${MODEL_ID%/}")"
 
 echo "Starting model: ${MODEL_ID}"
-bash scripts/run_stage1_sft_from_config.sh "${MODEL_ID}" \
+echo "Using config: ${CONFIG_JSON}"
+bash scripts/run_stage1_sft_from_config.sh "${MODEL_ID}" "${CONFIG_JSON}" \
   2>&1 | tee "${RUN_ROOT}/logs/train_${MODEL_TAG}_${SLURM_JOB_ID}.log"
