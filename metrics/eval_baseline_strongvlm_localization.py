@@ -8,36 +8,16 @@ from typing import Dict, List, Tuple
 from localization_metrics import average_precision, mean_average_precision, ndcg_at_k, recall_at_k
 
 
-DEFAULT_MODEL_DIRS = [
-    "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/baseline_SFT/qwen3_8b_stage1_merged_test/",
-    "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/baseline_SFT/qwen25_7b_stage1_merged_test/",
-    "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/baseline_SFT/qwen25_3b_stage1_merged_test/",
-]
-NO_NORMALIZE_DIR = "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/baseline_SFT/qwen25_3b_stage1_merged_test/"
+DEFAULT_ROOT = "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/baseline_strongVLM/"
 
 
 def _extract_ints(text: str) -> List[int]:
+    # Normalization rule: strip all text and keep numbers by appearance order.
     return [int(x) for x in re.findall(r"-?\d+", text or "")]
 
 
-def _first_k_unique(nums: List[int], k: int = 3) -> List[int]:
-    seen = set()
-    out = []
-    for n in nums:
-        if n in seen:
-            continue
-        seen.add(n)
-        out.append(n)
-        if len(out) == k:
-            break
-    return out
-
-
 def _pad_missing_with_impossible(pred: List[int], target_len: int = 3) -> List[int]:
-    """
-    Ensure at least `target_len` predictions.
-    Missing slots are filled with impossible IDs (>16).
-    """
+    # Fill missing slots with impossible IDs (>16).
     if len(pred) >= target_len:
         return pred
     out = list(pred)
@@ -50,7 +30,6 @@ def _pad_missing_with_impossible(pred: List[int], target_len: int = 3) -> List[i
 
 
 def _safe_pred_for_at_k(pred: List[int], k: int) -> List[int]:
-    # nDCG@k implementation expects at least k items.
     if len(pred) >= k:
         return pred
     sentinel = -10**9
@@ -68,14 +47,13 @@ def _load_records(model_dir: Path) -> List[dict]:
     return records
 
 
-def _build_preds_gts(records: List[dict], normalize_to_3_unique: bool) -> Tuple[List[List[int]], List[List[int]], Dict[str, int]]:
+def _build_preds_gts(records: List[dict]) -> Tuple[List[List[int]], List[List[int]], Dict[str, int]]:
     preds: List[List[int]] = []
     gts: List[List[int]] = []
     stats = {
         "total_records": 0,
         "used_records": 0,
         "skipped_missing_gt": 0,
-        "skipped_missing_pred": 0,
         "padded_missing_to_3": 0,
     }
 
@@ -87,8 +65,6 @@ def _build_preds_gts(records: List[dict], normalize_to_3_unique: bool) -> Tuple[
             continue
 
         pred = _extract_ints(str(rec.get("response", "")))
-        if normalize_to_3_unique:
-            pred = _first_k_unique(pred, k=3)
         if len(pred) < 3:
             pred = _pad_missing_with_impossible(pred, target_len=3)
             stats["padded_missing_to_3"] += 1
@@ -130,18 +106,18 @@ def _compute_metrics(preds: List[List[int]], gts: List[List[int]], k: int) -> Di
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Evaluate localization metrics on baseline SFT outputs."
+        description="Evaluate localization metrics on baseline_strongVLM outputs."
+    )
+    parser.add_argument(
+        "--root",
+        default=DEFAULT_ROOT,
+        help="Root dir containing <model_name>_test folders.",
     )
     parser.add_argument(
         "--model-dirs",
         nargs="+",
-        default=DEFAULT_MODEL_DIRS,
-        help="Model output root dirs (each containing sample_id/json files).",
-    )
-    parser.add_argument(
-        "--no-normalize-dir",
-        default=NO_NORMALIZE_DIR,
-        help="Directory that should NOT apply the 3-unique-number normalization.",
+        default=[],
+        help="Optional explicit model dirs. If omitted, auto-discovers *_test under --root.",
     )
     parser.add_argument(
         "-k",
@@ -157,26 +133,34 @@ def parse_args():
     return parser.parse_args()
 
 
+def _discover_model_dirs(root: Path) -> List[Path]:
+    return sorted([p for p in root.iterdir() if p.is_dir() and p.name.endswith("_test")])
+
+
 def main():
     args = parse_args()
-    no_norm = Path(args.no_normalize_dir).resolve()
-    all_results = {}
+    root = Path(args.root).resolve()
 
-    for model_dir_raw in args.model_dirs:
-        model_dir = Path(model_dir_raw).resolve()
+    if args.model_dirs:
+        model_dirs = [Path(p).resolve() for p in args.model_dirs]
+    else:
+        if not root.exists():
+            raise FileNotFoundError(f"--root does not exist: {root}")
+        model_dirs = _discover_model_dirs(root)
+
+    all_results = {}
+    for model_dir in model_dirs:
         model_name = model_dir.name.rstrip("/\\")
         if not model_dir.exists():
             all_results[model_name] = {"error": f"missing_dir: {model_dir.as_posix()}"}
             continue
 
         records = _load_records(model_dir)
-        apply_norm = model_dir != no_norm
-        preds, gts, stats = _build_preds_gts(records, normalize_to_3_unique=apply_norm)
+        preds, gts, stats = _build_preds_gts(records)
         metrics = _compute_metrics(preds, gts, k=args.k)
-
         all_results[model_name] = {
             "model_dir": model_dir.as_posix(),
-            "normalization": "first_3_unique_from_response" if apply_norm else "none",
+            "normalization": "extract_numbers_in_order_from_response_text",
             "stats": stats,
             "metrics": metrics,
         }
