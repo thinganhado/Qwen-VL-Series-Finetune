@@ -21,7 +21,7 @@ import json
 import sys
 
 config_path = sys.argv[1]
-with open(config_path, "r", encoding="utf-8") as f:
+with open(config_path, "r", encoding="utf-8-sig") as f:
     cfg = json.load(f)
 print(cfg.get("output_dir", "output/stage1_lora"))
 PY
@@ -61,7 +61,7 @@ import shlex
 import sys
 
 config_path = sys.argv[1]
-with open(config_path, "r", encoding="utf-8") as f:
+with open(config_path, "r", encoding="utf-8-sig") as f:
     cfg = json.load(f)
 
 parts = []
