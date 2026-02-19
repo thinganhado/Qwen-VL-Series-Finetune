@@ -158,13 +158,27 @@ class SupervisedDataset(Dataset):
 
             if DEFAULT_IMAGE_TOKEN in user_input:
                 num_images = user_input.count(DEFAULT_IMAGE_TOKEN)
-                # Slice the images list to get the images for the current turn.
-                images_for_this_turn = images[image_curr_count : image_curr_count + num_images]
+                # Slice images for this turn. For multi-turn samples with a single image,
+                # later turns can still contain <image>; in that case we reuse images by wrapping.
+                if images is None or len(images) == 0:
+                    raise ValueError("Found image token in prompt but no images were loaded for this sample.")
+
+                end = image_curr_count + num_images
+                if end <= len(images):
+                    images_for_this_turn = images[image_curr_count:end]
+                    image_curr_count = end
+                else:
+                    # Not enough unique images left for this turn. Reuse by wrap-around.
+                    images_for_this_turn = []
+                    for offset in range(num_images):
+                        idx = (image_curr_count + offset) % len(images)
+                        images_for_this_turn.append(images[idx])
+                    image_curr_count = end % len(images)
+
                 inputs = processor(text=[user_input], images=images_for_this_turn, videos=videos, padding=False, do_resize=False, return_tensors='pt')
                 prompt_input_ids = inputs['input_ids']
                 all_pixel_values.append(inputs[pixel_key])
                 all_image_grid_thw.append(inputs[grid_key])
-                image_curr_count += num_images
 
             elif DEFAULT_VIDEO_TOKEN in user_input:
                 num_videos = user_input.count(DEFAULT_VIDEO_TOKEN)
