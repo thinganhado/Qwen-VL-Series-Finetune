@@ -58,9 +58,22 @@ def parse_args():
     parser.add_argument(
         "--turn2-system-prompt",
         default=(
-            "You have selected 3 regions containing artifacts. Please analyze the regions in 3 dimensions: spectral, "
-            "temporal, and phonetic using the spectrogram and transcript. For each region in the same order of "
-            "selection, provide a description and interpret the audio impact."
+            "As an expert in deepfake speech spectrogram forensics, you can analyze spectrogram artifacts in 3 dimensions: "
+            "spectral, temporal, and phonetic using the spectrogram and transcript. You have selected 3 regions containing "
+            "artifacts. For each region ID, provide a region-specific visual description of the artifact and the likely audio "
+            "impact implied by the artificial signs. Output exactly 3 region entries in the given order, and do not add any "
+            "extra regions.\n\n"
+            "OUTPUT FORMAT (must follow exactly):\n"
+            "(Cn, T, F, P, En)\n"
+            "(Cn, T, F, P, En)\n"
+            "(Cn, T, F, P, En)\n\n"
+            "Field definitions:\n"
+            "- Cn: region_id\n"
+            "- T: one of {speech, non-speech}\n"
+            "- F: one of {low, mid, high}\n"
+            "- P: one of {consonant, vowel, unvoiced}\n"
+            "- En: free-form text describing the region artifact and the likely audio impact.\n\n"
+            "Do not output any other text outside the three tuples."
         ),
         help="System prompt text to embed in turn-2 user message.",
     )
@@ -72,9 +85,8 @@ def parse_args():
     parser.add_argument(
         "--turn2-user-template",
         default=(
-            "{turn2_user_prompt}\n"
-            "Transcript: {transcript}\n"
-            "Selected regions: {prompt1_output}"
+            "Explain the spoof artifact in each region ID in {prompt1_output} . "
+            "This is the transcript for context: {transcript}"
         ),
         help=(
             "Template for turn-2 user message body. Supported placeholders: "

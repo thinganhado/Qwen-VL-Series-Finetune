@@ -3,6 +3,7 @@ from typing import Dict, List, Optional, Sequence
 
 W_ACC = 0.75
 W_CONS = 0.25
+W_FMT = 0.1
 
 
 # Allowed closed sets
@@ -102,15 +103,54 @@ def _extract_field_value(text: str, field: str) -> Optional[str]:
     return m.group(1).strip()
 
 
-def _parse_tfp_from_text(text: str) -> Dict[str, Optional[str]]:
-    raw_t = _extract_field_value(text, "T")
-    raw_f = _extract_field_value(text, "F")
-    raw_p = _extract_field_value(text, "P")
-    return {
-        "T": _normalize_time(raw_t) if raw_t is not None else None,
-        "F": _normalize_freq(raw_f) if raw_f is not None else None,
-        "P": _normalize_phon(raw_p) if raw_p is not None else None,
-    }
+_REGION_PATTERN = re.compile(
+    r"\(\s*(\d+)\s*,\s*([^,]+?)\s*,\s*([^,]+?)\s*,\s*([^,]+?)\s*,\s*(.*?)\s*\)",
+    flags=re.DOTALL,
+)
+
+
+def _parse_region_tuples(text: str) -> Optional[List[Dict[str, str]]]:
+    """
+    Parse tuples in format:
+      (Cn, T, F, P, En)
+    Exactly 3 tuples are required for a valid output.
+    """
+    matches = _REGION_PATTERN.findall(text)
+    if len(matches) != 3:
+        return None
+
+    parsed: List[Dict[str, str]] = []
+    seen_cn = set()
+
+    for cn_raw, t_raw, f_raw, p_raw, en_raw in matches:
+        cn = int(cn_raw)
+        t = _normalize_time(t_raw)
+        f = _normalize_freq(f_raw)
+        p = _normalize_phon(p_raw)
+        en = en_raw.strip()
+
+        if cn <= 0:
+            return None
+        if cn in seen_cn:
+            return None
+        seen_cn.add(cn)
+
+        if t is None or f is None or p is None:
+            return None
+        if len(en) == 0:
+            return None
+
+        parsed.append(
+            {
+                "Cn": str(cn),
+                "T": t,
+                "F": f,
+                "P": p,
+                "En": en,
+            }
+        )
+
+    return parsed
 
 
 def _extract_en_text(text: str) -> str:
@@ -156,25 +196,25 @@ def _independent_extract_from_en(en_text: str) -> Dict[str, Optional[str]]:
     }
 
 
-def _field_accuracy_score(pred: Dict[str, Optional[str]], gt: Dict[str, Optional[str]]) -> float:
+def _region_field_accuracy(pred: Dict[str, str], gt: Optional[Dict[str, str]]) -> float:
     """
-    Macro average over T/F/P:
-      (1[T=gtT] + 1[F=gtF] + 1[P=gtP]) / 3
-    Missing/invalid labels score 0 for that field.
+    Per-region field accuracy over T/F/P.
+    If GT for the region is missing, score is 0.
     """
+    if gt is None:
+        return 0.0
     score = 0.0
-    score += 1.0 if pred["T"] is not None and pred["T"] == gt["T"] else 0.0
-    score += 1.0 if pred["F"] is not None and pred["F"] == gt["F"] else 0.0
-    score += 1.0 if pred["P"] is not None and pred["P"] == gt["P"] else 0.0
+    score += 1.0 if pred["T"] == gt["T"] else 0.0
+    score += 1.0 if pred["F"] == gt["F"] else 0.0
+    score += 1.0 if pred["P"] == gt["P"] else 0.0
     return score / 3.0
 
 
-def _consistency_score(pred: Dict[str, Optional[str]], en_extracted: Dict[str, Optional[str]]) -> float:
+def _region_consistency(pred: Dict[str, str]) -> float:
     """
-    Fields <-> En consistency:
-      (1[T_en=T] + 1[F_en=F] + 1[P_en=P]) / 3
-    Missing En extraction on a field gives 0 for that field.
+    Per-region fields <-> En consistency over T/F/P.
     """
+    en_extracted = _independent_extract_from_en(pred["En"])
     score = 0.0
     score += 1.0 if en_extracted["T"] is not None and en_extracted["T"] == pred["T"] else 0.0
     score += 1.0 if en_extracted["F"] is not None and en_extracted["F"] == pred["F"] else 0.0
@@ -182,26 +222,48 @@ def _consistency_score(pred: Dict[str, Optional[str]], en_extracted: Dict[str, O
     return score / 3.0
 
 
+def _format_score(text: str) -> float:
+    return 1.0 if _parse_region_tuples(text) is not None else 0.0
+
+
 def prompt2_reward(completions: Sequence[str], assistant: Sequence[str], **kwargs) -> List[float]:
     """
-    Dominant metric: field accuracy on T/F/P.
+    Dominant metric: field accuracy on T/F/P across 3 region tuples.
     Secondary metric: fields <-> En consistency.
+    Hard format gating: completion must contain exactly 3 tuples in format
+      (Cn, T, F, P, En)
+    with allowed T/F/P values.
 
     Combined reward:
-      0.75 * field_accuracy + 0.25 * consistency
+      Average over 3 regions of:
+        0.75 * region_field_accuracy + 0.25 * region_consistency + 0.1 * region_format
     """
     rewards = []
     for completion, gt_text in zip(completions, assistant):
-        pred_tfp = _parse_tfp_from_text(completion)
-        gt_tfp = _parse_tfp_from_text(gt_text)
+        pred_regions = _parse_region_tuples(completion)
+        gt_regions = _parse_region_tuples(gt_text)
 
-        field_acc = _field_accuracy_score(pred_tfp, gt_tfp)
+        if pred_regions is None:
+            rewards.append(0.0)
+            continue
+        if gt_regions is None:
+            # If GT is malformed, skip with zero to avoid unstable optimization.
+            rewards.append(0.0)
+            continue
 
-        en_text = _extract_en_text(completion)
-        en_tfp = _independent_extract_from_en(en_text)
-        consistency = _consistency_score(pred_tfp, en_tfp)
+        gt_by_cn = {r["Cn"]: r for r in gt_regions}
+        fmt = _format_score(completion)
 
-        reward = W_ACC * field_acc + W_CONS * consistency
+        reward = 0.0
+        for pred in pred_regions:
+            gt = gt_by_cn.get(pred["Cn"])
+            region_acc = _region_field_accuracy(pred, gt)
+            region_cons = _region_consistency(pred)
+            region_fmt = fmt  # format validity applies to all tuples in this completion
+            reward += W_ACC * region_acc + W_CONS * region_cons + W_FMT * region_fmt
+
+        reward /= 3.0
+
         rewards.append(float(reward))
 
     return rewards
