@@ -18,10 +18,10 @@
   "disable_flash_attn2": true,
   "output_dir": "output/stage1_mt_lora",
   "num_train_epochs": 1,
-  "per_device_train_batch_size": 2,
-  "gradient_accumulation_steps": 4,
-  "image_min_pixels": 401408,
-  "image_max_pixels": 1003520,
+  "per_device_train_batch_size": 1,
+  "gradient_accumulation_steps": 8,
+  "image_min_pixels": 262144,
+  "image_max_pixels": 524288,
   "learning_rate": 0.0001,
   "merger_lr": 0.00001,
   "vision_lr": 0.000002,
@@ -33,8 +33,8 @@
   "save_strategy": "steps",
   "save_steps": 200,
   "save_total_limit": 5,
-  "gradient_checkpointing": true,
+  "gradient_checkpointing": false,
   "report_to": "tensorboard",
   "lazy_preprocess": true,
-  "dataloader_num_workers": 8
+  "dataloader_num_workers": 4
 }
