@@ -271,6 +271,10 @@ class GRPOArguments(GRPOConfigTRL):
     max_completion_length: int = 256
     max_prompt_length: int = 512
     use_liger_loss: bool = True
+    reward_module: str = field(
+        default="src.train.reward_funcs",
+        metadata={"help": "Python module path to reward functions. All callables ending with `_reward` are loaded."}
+    )
 
 
 @dataclass
