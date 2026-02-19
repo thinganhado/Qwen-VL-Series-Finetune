@@ -1,5 +1,5 @@
 {
-  "use_liger_kernel": true,
+  "use_liger_kernel": false,
   "lora_enable": true,
   "use_dora": false,
   "lora_rank": 32,
