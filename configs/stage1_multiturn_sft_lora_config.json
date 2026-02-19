@@ -15,7 +15,7 @@
   "freeze_merger": false,
   "bf16": false,
   "fp16": true,
-  "disable_flash_attn2": false,
+  "disable_flash_attn2": true,
   "output_dir": "output/stage1_mt_lora",
   "num_train_epochs": 1,
   "per_device_train_batch_size": 2,
