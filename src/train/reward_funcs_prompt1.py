@@ -1,6 +1,6 @@
 import re
 import math
-from typing import List, Optional, Sequence, Set
+from typing import Dict, List, Optional, Sequence
 
 W_NDCG = 1.0
 W_FORMAT = 0.1
@@ -36,21 +36,38 @@ def _parse_gt_ids(text: str) -> List[int]:
 
 def _ndcg_at_3(pred: Sequence[int], gt: Sequence[int]) -> float:
     """
-    nDCG@3 for binary relevance with formula aligned to metrics/localization_metrics.py.
+    Graded nDCG@3 with GT rank-aware relevance.
+
+    GT is already ranked by prominence (most prominent first):
+      GT rank 1 -> rel 3
+      GT rank 2 -> rel 2
+      GT rank 3 -> rel 1
+      non-GT    -> rel 0
+
+    DCG@3 = sum_{j=1..3} (2^rel_j - 1) / log2(j + 1)
+    IDCG@3 is computed from ideal GT ordering (top-3 GT ranks in order).
     """
-    G: Set[int] = set(gt)
+    rel_by_id: Dict[int, int] = {}
+    # Keep first occurrence only; GT order encodes relevance.
+    for rank, rid in enumerate(gt[:3]):
+        if rid in rel_by_id:
+            continue
+        rel_by_id[rid] = 3 - rank
+
     dcg = 0.0
     for j in range(1, 4):
-        rel = 1 if pred[j - 1] in G else 0
+        rel = rel_by_id.get(pred[j - 1], 0)
         dcg += (2**rel - 1) / math.log2(j + 1)
 
-    m = min(3, len(G))
+    ideal_rels = sorted(rel_by_id.values(), reverse=True)
+    m = min(3, len(ideal_rels))
     if m == 0:
         return 0.0
 
     idcg = 0.0
     for j in range(1, m + 1):
-        idcg += 1.0 / math.log2(j + 1)
+        rel = ideal_rels[j - 1]
+        idcg += (2**rel - 1) / math.log2(j + 1)
 
     return dcg / idcg
 
