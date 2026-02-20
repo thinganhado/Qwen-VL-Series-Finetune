@@ -32,6 +32,18 @@ def parse_args():
     parser.add_argument("--glob-pattern", default="grid/*/json", help="Glob pattern under input-root.")
     parser.add_argument("--output-json", default=None, help="Optional summary+detail json.")
     parser.add_argument("--output-jsonl", default=None, help="Optional per-sample jsonl.")
+    parser.add_argument(
+        "--strict-caption-metrics",
+        action="store_true",
+        default=True,
+        help="Fail fast if ROUGE-L/METEOR/BERTScore dependencies are missing or fail at runtime.",
+    )
+    parser.add_argument(
+        "--no-strict-caption-metrics",
+        action="store_false",
+        dest="strict_caption_metrics",
+        help="Do not fail on caption metric dependency/runtime issues; return null for failed metrics.",
+    )
     return parser.parse_args()
 
 
@@ -136,7 +148,9 @@ def _field_metrics(y_true: List[str], y_pred: List[Optional[str]], labels: List[
     return {"accuracy": acc, "macro_f1": macro_f1}
 
 
-def _caption_scores(gt_caps: List[str], pred_caps: List[str]) -> Dict[str, Optional[float]]:
+def _caption_scores(
+    gt_caps: List[str], pred_caps: List[str], strict: bool = True
+) -> Dict[str, Optional[float]]:
     scores: Dict[str, Optional[float]] = {"ROUGE_L": None, "METEOR": None, "BERTScore_F1": None}
     if not gt_caps:
         return scores
@@ -150,16 +164,18 @@ def _caption_scores(gt_caps: List[str], pred_caps: List[str]) -> Dict[str, Optio
         meteor, _ = meteor_score(gts, res)
         scores["ROUGE_L"] = float(rouge_l)
         scores["METEOR"] = float(meteor)
-    except Exception:
-        pass
+    except Exception as e:
+        if strict:
+            raise RuntimeError(f"ROUGE_L/METEOR computation failed: {e}") from e
 
     try:
         from bert_score import score as bert_score
 
         _, _, f1 = bert_score(pred_caps, gt_caps, lang="en", verbose=False)
         scores["BERTScore_F1"] = float(f1.mean().item())
-    except Exception:
-        pass
+    except Exception as e:
+        if strict:
+            raise RuntimeError(f"BERTScore computation failed: {e}") from e
 
     return scores
 
@@ -310,7 +326,7 @@ def main():
     consscore = (agree["T"] + agree["F"] + agree["P"]) / (3.0 * n_regions) if n_regions else 0.0
 
     # Caption quality on En
-    caption = _caption_scores(gt_caps, pred_caps)
+    caption = _caption_scores(gt_caps, pred_caps, strict=args.strict_caption_metrics)
 
     accuracy_cn = (cn_slots_correct / cn_slots_total) if cn_slots_total else 0.0
     mean_fieldacc_macro = mean([accuracy_cn, t_metrics["accuracy"], f_metrics["accuracy"], p_metrics["accuracy"]]) if n_regions else 0.0
