@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=0
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:8
 #SBATCH --time=12:00:00
 #SBATCH --output=/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/baseline_SFT/logs/%x_%j.out
 #SBATCH --error=/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/baseline_SFT/logs/%x_%j.err
@@ -47,4 +47,3 @@ fi
 
 bash scripts/run_grpo_from_config.sh "${MODEL_ID}" "${CONFIG_JSON}" \
   2>&1 | tee "${RUN_ROOT}/logs/grpo1_${SLURM_JOB_ID}.log"
-
