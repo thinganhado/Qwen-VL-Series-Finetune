@@ -10,8 +10,11 @@ from typing import Dict, List, Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
+METRICS_ROOT = REPO_ROOT / "metrics"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
+if str(METRICS_ROOT) not in sys.path:
+    sys.path.insert(0, str(METRICS_ROOT))
 
 from train.reward_funcs_prompt2 import (  # noqa: E402
     FREQ_LABELS,
@@ -156,7 +159,7 @@ def _caption_scores(
         return scores
 
     try:
-        from metrics.caption_metrics import meteor_score, rouge_l_score
+        from caption_metrics import meteor_score, rouge_l_score
 
         gts = {i: [gt] for i, gt in enumerate(gt_caps)}
         res = {i: [pd] for i, pd in enumerate(pred_caps)}
