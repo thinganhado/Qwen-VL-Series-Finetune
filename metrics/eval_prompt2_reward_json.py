@@ -99,6 +99,34 @@ def _parse_regions_loose(text: str) -> Dict[str, Dict[str, Optional[str]]]:
     return out
 
 
+def _parse_cn_list_prompt1(text: str) -> List[str]:
+    raw = str(text or "").strip()
+    if not raw:
+        return []
+
+    vals: List[str] = []
+    try:
+        obj = json.loads(raw)
+        if isinstance(obj, list):
+            for x in obj:
+                sx = str(x).strip()
+                if re.fullmatch(r"\d+", sx):
+                    vals.append(str(int(sx)))
+            return vals
+    except Exception:
+        pass
+
+    nums = re.findall(r"\d+", raw)
+    return [str(int(x)) for x in nums]
+
+
+def _parse_cn_list_pred_response(text: str) -> List[str]:
+    vals: List[str] = []
+    for cn_raw, *_ in _PRED_TUPLE_RE.findall(str(text or "")):
+        vals.append(str(int(cn_raw)))
+    return vals
+
+
 def _field_metrics(y_true: List[str], y_pred: List[Optional[str]], labels: List[str]) -> Dict[str, float]:
     n = len(y_true)
     correct = sum(1 for t, p in zip(y_true, y_pred) if p == t)
@@ -175,6 +203,8 @@ def main():
     per_sample = []
     unreadable = 0
     invalid_gt = 0
+    cn_slots_total = 0
+    cn_slots_correct = 0
 
     for p in paths:
         try:
@@ -184,8 +214,17 @@ def main():
             continue
 
         sample_id = str(rec.get("sample_id_raw") or rec.get("sample_id") or p.parent.name)
+        p1_cn = _parse_cn_list_prompt1(str(rec.get("prompt1_output", "")))
         gt_norm = _normalize_gt_prompt2_target(str(rec.get("prompt2_target", "")))
         pred_norm = _normalize_pred_response(str(rec.get("response", "")))
+        pred_cn = _parse_cn_list_pred_response(pred_norm)
+
+        if p1_cn:
+            for i in range(len(p1_cn)):
+                cn_slots_total += 1
+                got = pred_cn[i] if i < len(pred_cn) else None
+                if got == p1_cn[i]:
+                    cn_slots_correct += 1
 
         if gt_norm is None:
             invalid_gt += 1
@@ -250,7 +289,9 @@ def main():
     t_metrics = _field_metrics(y_true_t, y_pred_t, sorted(TIME_LABELS))
     f_metrics = _field_metrics(y_true_f, y_pred_f, sorted(FREQ_LABELS))
     p_metrics = _field_metrics(y_true_p, y_pred_p, sorted(PHON_LABELS))
+    accuracy_cn = (cn_slots_correct / cn_slots_total) if cn_slots_total else 0.0
     mean_fieldacc_macro_3 = mean([t_metrics["accuracy"], f_metrics["accuracy"], p_metrics["accuracy"]]) if n_regions else 0.0
+    mean_fieldacc_macro = mean([accuracy_cn, t_metrics["accuracy"], f_metrics["accuracy"], p_metrics["accuracy"]]) if n_regions else 0.0
 
     # Consistency metrics
     coverage_t = (extractable["T"] / n_regions) if n_regions else 0.0
@@ -272,6 +313,7 @@ def main():
         "num_invalid_gt": invalid_gt,
         "num_regions_scored": n_regions,
         "accuracy": {
+            "Accuracy_Cn": accuracy_cn,
             "Accuracy_T": t_metrics["accuracy"],
             "Accuracy_F": f_metrics["accuracy"],
             "Accuracy_P": p_metrics["accuracy"],
@@ -279,6 +321,7 @@ def main():
             "MacroF1_F": f_metrics["macro_f1"],
             "MacroF1_P": p_metrics["macro_f1"],
             "MeanFieldAcc_macro_3fields": mean_fieldacc_macro_3,
+            "MeanFieldAcc_macro": mean_fieldacc_macro,
         },
         "consistency": {
             "ConsScore": consscore,
