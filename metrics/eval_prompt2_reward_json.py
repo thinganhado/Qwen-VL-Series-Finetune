@@ -84,6 +84,41 @@ def _parse_regions_loose(text: str) -> Dict[str, Dict[str, Optional[str]]]:
     return out
 
 
+def _parse_cn_list_prompt1(text: str) -> List[str]:
+    """
+    Parse prompt1_output forms like:
+      "3,4,7"
+      "[3, 4, 7]"
+      "[\"3\", \"4\", \"7\"]"
+    Returns ordered list of region ids as strings.
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return []
+
+    vals: List[str] = []
+    try:
+        obj = json.loads(raw)
+        if isinstance(obj, list):
+            for x in obj:
+                sx = str(x).strip()
+                if re.fullmatch(r"\d+", sx):
+                    vals.append(str(int(sx)))
+            return vals
+    except Exception:
+        pass
+
+    nums = re.findall(r"\d+", raw)
+    return [str(int(x)) for x in nums]
+
+
+def _parse_cn_list_pred_response(text: str) -> List[str]:
+    vals: List[str] = []
+    for cn_raw, *_ in _PRED_TUPLE_RE.findall(str(text or "")):
+        vals.append(str(int(cn_raw)))
+    return vals
+
+
 def _field_metrics(y_true: List[str], y_pred: List[Optional[str]], labels: List[str]) -> Dict[str, float]:
     n = len(y_true)
     correct = sum(1 for t, p in zip(y_true, y_pred) if p == t)
@@ -157,6 +192,12 @@ def main():
     unreadable = 0
     invalid_gt = 0
 
+    # Cn metrics (position-wise against prompt1_output)
+    cn_slots_total = 0
+    cn_slots_correct = 0
+    cn_samples_total = 0
+    cn_samples_exact = 0
+
     for p in paths:
         try:
             rec = json.loads(p.read_text(encoding="utf-8-sig"))
@@ -165,11 +206,38 @@ def main():
             continue
 
         sample_id = str(rec.get("sample_id_raw") or rec.get("sample_id") or p.parent.name)
+        p1_cn = _parse_cn_list_prompt1(str(rec.get("prompt1_output", "")))
         gt_norm = _normalize_gt_prompt2_target(str(rec.get("prompt2_target", "")))
         pred_norm = _normalize_pred_response(str(rec.get("response", "")))
+        pred_cn = _parse_cn_list_pred_response(pred_norm)
+
+        if p1_cn:
+            cn_samples_total += 1
+            # Compare position-wise (expected 3 slots)
+            sample_slots = len(p1_cn)
+            sample_correct = 0
+            for i in range(sample_slots):
+                cn_slots_total += 1
+                got = pred_cn[i] if i < len(pred_cn) else None
+                if got == p1_cn[i]:
+                    cn_slots_correct += 1
+                    sample_correct += 1
+            if sample_correct == sample_slots:
+                cn_samples_exact += 1
+
         if gt_norm is None:
             invalid_gt += 1
-            per_sample.append({"sample_id": sample_id, "status": "invalid_gt", "num_regions": 0})
+            per_sample.append(
+                {
+                    "sample_id": sample_id,
+                    "status": "invalid_gt",
+                    "num_regions": 0,
+                    "prompt1_cn_expected": p1_cn,
+                    "pred_cn": pred_cn,
+                    "Cn_PositionAcc_sample": (sample_correct / len(p1_cn)) if p1_cn else None,
+                    "Cn_Exact3_sample": (sample_correct == len(p1_cn)) if p1_cn else None,
+                }
+            )
             continue
 
         gt_by_cn = _parse_regions_loose(gt_norm)
@@ -217,6 +285,10 @@ def main():
                 "status": "ok",
                 "num_regions": len(gt_by_cn),
                 "ConsScore_sample": (mean(sample_region_scores) if sample_region_scores else 0.0),
+                "prompt1_cn_expected": p1_cn,
+                "pred_cn": pred_cn,
+                "Cn_PositionAcc_sample": (sample_correct / len(p1_cn)) if p1_cn else None,
+                "Cn_Exact3_sample": (sample_correct == len(p1_cn)) if p1_cn else None,
             }
         )
 
@@ -245,6 +317,7 @@ def main():
         "num_unreadable": unreadable,
         "num_invalid_gt": invalid_gt,
         "num_regions_scored": n_regions,
+        "num_samples_with_prompt1_cn": cn_samples_total,
         "accuracy": {
             "Accuracy_T": t_metrics["accuracy"],
             "Accuracy_F": f_metrics["accuracy"],
@@ -270,6 +343,12 @@ def main():
             "METEOR": caption["METEOR"],
             "BERTScore_F1": caption["BERTScore_F1"],
         },
+        "cn_alignment": {
+            "Cn_PositionAcc": (cn_slots_correct / cn_slots_total) if cn_slots_total else 0.0,
+            "Cn_ExactMatchRate": (cn_samples_exact / cn_samples_total) if cn_samples_total else 0.0,
+            "Cn_SlotsTotal": cn_slots_total,
+            "Cn_SlotsCorrect": cn_slots_correct,
+        },
     }
 
     print(json.dumps(summary, indent=2))
@@ -289,4 +368,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
