@@ -78,20 +78,43 @@ def meteor_score(gts, res):
     METEOR:
     score, scores = Meteor().compute_score(gts, res)
     """
-    scorer = RobustMeteor()
+    # Try batch pycocoevalcap first.
     try:
-        score, scores = scorer.compute_score(gts, res)
-        return score, scores
+        scorer = RobustMeteor()
+        return scorer.compute_score(gts, res)
     except Exception:
-        # Fallback for METEOR variants that do not emit scalar lines for batched EVAL.
-        # Compute per-sample METEOR through the scorer's single-example path.
+        pass
+
+    # Fallback 1: per-sample with a fresh METEOR process each call.
+    try:
         img_ids = list(gts.keys())
         per_sample = []
         for i in img_ids:
             assert len(res[i]) == 1
-            per_sample.append(float(scorer._score(res[i][0], gts[i])))
+            scorer_i = RobustMeteor()
+            try:
+                per_sample.append(float(scorer_i._score(res[i][0], gts[i])))
+            finally:
+                try:
+                    scorer_i.__del__()
+                except Exception:
+                    pass
         agg = mean(per_sample) if per_sample else 0.0
         return float(agg), per_sample
+    except Exception:
+        pass
+
+    # Fallback 2: NLTK METEOR without Java subprocess.
+    from nltk.translate.meteor_score import meteor_score as nltk_meteor_score
+
+    img_ids = list(gts.keys())
+    per_sample = []
+    for i in img_ids:
+        hyp = (res[i][0] or "").replace("|||", " ").strip().split()
+        refs = [(r or "").replace("|||", " ").strip().split() for r in gts[i]]
+        per_sample.append(float(nltk_meteor_score(refs, hyp)))
+    agg = mean(per_sample) if per_sample else 0.0
+    return float(agg), per_sample
 
 
 def rouge_l_score(gts, res):
