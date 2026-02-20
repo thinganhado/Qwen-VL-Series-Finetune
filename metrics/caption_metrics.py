@@ -85,26 +85,7 @@ def meteor_score(gts, res):
     except Exception:
         pass
 
-    # Fallback 1: per-sample with a fresh METEOR process each call.
-    try:
-        img_ids = list(gts.keys())
-        per_sample = []
-        for i in img_ids:
-            assert len(res[i]) == 1
-            scorer_i = RobustMeteor()
-            try:
-                per_sample.append(float(scorer_i._score(res[i][0], gts[i])))
-            finally:
-                try:
-                    scorer_i.__del__()
-                except Exception:
-                    pass
-        agg = mean(per_sample) if per_sample else 0.0
-        return float(agg), per_sample
-    except Exception:
-        pass
-
-    # Fallback 2: NLTK METEOR without Java subprocess.
+    # Fallback: NLTK METEOR without Java subprocess.
     from nltk.translate.meteor_score import meteor_score as nltk_meteor_score
 
     img_ids = list(gts.keys())
