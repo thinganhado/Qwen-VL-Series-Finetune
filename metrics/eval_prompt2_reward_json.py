@@ -296,7 +296,7 @@ def main():
     t_metrics = _field_metrics(y_true_t, y_pred_t, sorted(TIME_LABELS))
     f_metrics = _field_metrics(y_true_f, y_pred_f, sorted(FREQ_LABELS))
     p_metrics = _field_metrics(y_true_p, y_pred_p, sorted(PHON_LABELS))
-    mean_fieldacc_macro = mean([t_metrics["accuracy"], f_metrics["accuracy"], p_metrics["accuracy"]]) if n_regions else 0.0
+    mean_fieldacc_macro_3 = mean([t_metrics["accuracy"], f_metrics["accuracy"], p_metrics["accuracy"]]) if n_regions else 0.0
 
     # Consistency metrics
     coverage_t = (extractable["T"] / n_regions) if n_regions else 0.0
@@ -312,6 +312,9 @@ def main():
     # Caption quality on En
     caption = _caption_scores(gt_caps, pred_caps)
 
+    accuracy_cn = (cn_slots_correct / cn_slots_total) if cn_slots_total else 0.0
+    mean_fieldacc_macro = mean([accuracy_cn, t_metrics["accuracy"], f_metrics["accuracy"], p_metrics["accuracy"]]) if n_regions else 0.0
+
     summary = {
         "num_files": len(paths),
         "num_unreadable": unreadable,
@@ -319,12 +322,14 @@ def main():
         "num_regions_scored": n_regions,
         "num_samples_with_prompt1_cn": cn_samples_total,
         "accuracy": {
+            "Accuracy_Cn": accuracy_cn,
             "Accuracy_T": t_metrics["accuracy"],
             "Accuracy_F": f_metrics["accuracy"],
             "Accuracy_P": p_metrics["accuracy"],
             "MacroF1_T": t_metrics["macro_f1"],
             "MacroF1_F": f_metrics["macro_f1"],
             "MacroF1_P": p_metrics["macro_f1"],
+            "MeanFieldAcc_macro_3fields": mean_fieldacc_macro_3,
             "MeanFieldAcc_macro": mean_fieldacc_macro,
         },
         "consistency": {
