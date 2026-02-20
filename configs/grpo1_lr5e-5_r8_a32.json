@@ -11,7 +11,7 @@
   "bf16": false,
   "fp16": true,
   "disable_flash_attn2": true,
-  "output_dir": "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/GRPO-1/lr5e-5_r8_a32",
+  "output_dir": "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/GRPO-1/en_low",
   "num_train_epochs": 2,
   "beta": 0.0,
   "num_generations": 8,
