@@ -38,6 +38,16 @@ conda activate deepfake || {
 
 source scripts/env_baseline_sft.sh
 
+mkdir -p /scratch3/che489/Ha/tmp/triton \
+         /scratch3/che489/Ha/tmp/torch_extensions \
+         /scratch3/che489/Ha/tmp/hf_home \
+         /scratch3/che489/Ha/tmp/xdg
+
+export TRITON_CACHE_DIR=/scratch3/che489/Ha/tmp/triton
+export TORCH_EXTENSIONS_DIR=/scratch3/che489/Ha/tmp/torch_extensions
+export HF_HOME=/scratch3/che489/Ha/tmp/hf_home
+export XDG_CACHE_HOME=/scratch3/che489/Ha/tmp/xdg
+
 if [ -z "${MODEL_ID:-}" ]; then
   echo "MODEL_ID is required (should be merged SFT model path)"
   echo "Example:"
