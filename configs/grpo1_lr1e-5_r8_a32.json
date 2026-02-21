@@ -10,7 +10,7 @@
   "freeze_merger": false,
   "bf16": false,
   "fp16": true,
-  "disable_flash_attn2": true,
+  "disable_flash_attn2": false,
   "output_dir": "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/GRPO-1/lr1e-5_r8_a32",
   "num_train_epochs": 2,
   "beta": 0.0,
