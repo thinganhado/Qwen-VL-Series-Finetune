@@ -1,6 +1,7 @@
 {
   "deepspeed": "scripts/zero2.json",
   "use_liger_loss": true,
+  "lora_enable": true,
   "data_path": "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/baseline_SFT/stage1_train.json",
   "image_folder": "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/img/specs/grid/",
   "reward_module": "src.train.reward_funcs_prompt1",
