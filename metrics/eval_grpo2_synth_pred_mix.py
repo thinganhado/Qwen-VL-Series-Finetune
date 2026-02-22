@@ -9,6 +9,7 @@ from localization_metrics import average_precision, mean_average_precision, ndcg
 
 
 LIST_RE = re.compile(r"\[\s*-?\d+(?:\s*,\s*-?\d+){2}\s*\]")
+CSV3_RE = re.compile(r"(?<!\d)(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)(?!\d)")
 
 
 def parse_args():
@@ -28,13 +29,19 @@ def parse_args():
 
 
 def _extract_list_from_text(text: str):
-    m = LIST_RE.search(text or "")
-    if not m:
-        return None
-    nums = [int(x) for x in re.findall(r"-?\d+", m.group(0))]
-    if len(nums) != 3:
-        return None
-    return nums
+    t = text or ""
+    m = LIST_RE.search(t)
+    if m:
+        nums = [int(x) for x in re.findall(r"-?\d+", m.group(0))]
+        if len(nums) == 3:
+            return nums
+
+    # Fallback: plain CSV triple without brackets, e.g. "13, 1, 2"
+    m2 = CSV3_RE.search(t)
+    if m2:
+        return [int(m2.group(1)), int(m2.group(2)), int(m2.group(3))]
+
+    return None
 
 
 def _extract_list_from_record(rec: dict):
@@ -45,6 +52,13 @@ def _extract_list_from_record(rec: dict):
             if not isinstance(turn, dict):
                 continue
             if str(turn.get("from", "")).strip().lower() != "human":
+                continue
+            arr = _extract_list_from_text(str(turn.get("value", "")))
+            if arr is not None:
+                return arr
+        # Fallback: any turn text in reverse order.
+        for turn in reversed(convs):
+            if not isinstance(turn, dict):
                 continue
             arr = _extract_list_from_text(str(turn.get("value", "")))
             if arr is not None:
