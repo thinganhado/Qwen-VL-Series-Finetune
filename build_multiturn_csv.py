@@ -11,7 +11,7 @@ DEFAULT_TRANSCRIPT_JSON_ROOT = (
     "/scratch3/che489/Ha/interspeech/datasets/vocv4_mfa_aligned/"
 )
 DEFAULT_REGION_TABLE_CSV = (
-    "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/img/region_phone_table_grid.csv"
+    "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/img/final_mask_topk/region_phone_table_topk3.csv"
 )
 DEFAULT_GRID_EXPLANATION_ROOT = (
     "/datasets/work/dss-deepfake-audio/work/data/datasets/interspeech/En/grid_explanation/"
