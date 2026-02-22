@@ -135,6 +135,12 @@ class GRPODataset(Dataset):
             assistant=assistant_prompt,
         )
 
+        # Optional passthrough fields for reward functions.
+        # These keys are read when present in the source json record.
+        for k in ("sft_top3", "prompt1_output", "sample_id", "sample_id_raw"):
+            if k in sources:
+                data_dict[k] = sources[k]
+
         # Only include images/videos keys when they have actual data
         if images is not None:
             data_dict["images"] = images

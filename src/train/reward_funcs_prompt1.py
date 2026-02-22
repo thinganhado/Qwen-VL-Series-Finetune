@@ -1,9 +1,11 @@
 import re
 import math
+import os
 from typing import Dict, List, Optional, Sequence
 
 W_NDCG = 1.0
 W_FORMAT = 0.1
+W_NOVELTY = float(os.getenv("PROMPT1_W_NOVELTY", "0.0"))
 
 
 def _parse_region_ids_any(text: str) -> Optional[List[int]]:
@@ -35,6 +37,10 @@ def _parse_gt_ids(text: str) -> List[int]:
     """
     tokens = re.findall(r"\d+", text)
     return [int(tok) for tok in tokens]
+
+
+def _parse_ids_loose(text: str) -> List[int]:
+    return [int(tok) for tok in re.findall(r"\d+", str(text or ""))]
 
 def _ndcg_at_3(pred: Sequence[int], gt: Sequence[int]) -> float:
     """
@@ -110,11 +116,30 @@ def _ndcg3_score(completions: Sequence[str], assistant: Sequence[str], **kwargs)
 def prompt1_reward(completions: Sequence[str], assistant: Sequence[str], **kwargs) -> List[float]:
     """
     Weighted Prompt-1 reward:
-      w_ndcg * nDCG@3 + w_format * strict_format
+      w_ndcg * nDCG@3 + w_format * strict_format + w_novelty * novelty
+
+    Novelty:
+      sum_{c in pred} I(c in GT and c not in SFT_top3)
+
+    SFT_top3 is read from kwargs key `sft_top3` first, then `prompt1_output`.
+    If neither is present for a sample, novelty is treated as 0.
     """
     ndcg_scores = _ndcg3_score(completions, assistant, **kwargs)
     format_scores = _strict_format_score(completions, **kwargs)
-    return [
-        float(W_NDCG * n + W_FORMAT * f)
-        for n, f in zip(ndcg_scores, format_scores)
-    ]
+    sft_refs = kwargs.get("sft_top3")
+    if sft_refs is None:
+        sft_refs = kwargs.get("prompt1_output")
+
+    rewards: List[float] = []
+    for idx, (completion, gt_text, n, f) in enumerate(zip(completions, assistant, ndcg_scores, format_scores)):
+        pred_ids = _parse_region_ids_any(completion)
+        gt_ids = set(_parse_gt_ids(gt_text))
+
+        novelty = 0.0
+        if pred_ids is not None and sft_refs is not None:
+            sft_item = sft_refs[idx] if idx < len(sft_refs) else None
+            sft_ids = set(_parse_ids_loose(sft_item))
+            novelty = float(sum(1 for rid in pred_ids if rid in gt_ids and rid not in sft_ids))
+
+        rewards.append(float(W_NDCG * n + W_FORMAT * f + W_NOVELTY * novelty))
+    return rewards
