@@ -31,7 +31,7 @@ import json
 import sys
 
 config_path = sys.argv[1]
-with open(config_path, "r", encoding="utf-8") as f:
+with open(config_path, "r", encoding="utf-8-sig") as f:
     cfg = json.load(f)
 print(cfg.get("output_dir", "output/grpo_run"))
 PY
@@ -44,7 +44,7 @@ import shlex
 import sys
 
 config_path = sys.argv[1]
-with open(config_path, "r", encoding="utf-8") as f:
+with open(config_path, "r", encoding="utf-8-sig") as f:
     cfg = json.load(f)
 
 parts = []
@@ -66,4 +66,3 @@ PY
 CMD="$DS_LAUNCHER src/train/train_grpo.py --model_id \"$MODEL_ID\" --output_dir \"$BASE_OUTPUT_DIR\" $EXTRA_ARGS"
 echo "$CMD"
 eval "$CMD"
-
