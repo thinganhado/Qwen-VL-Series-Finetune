@@ -1,4 +1,4 @@
-{
+﻿{
   "deepspeed": "scripts/zero2.json",
   "use_liger_loss": true,
   "lora_enable": true,
@@ -14,7 +14,7 @@
   "disable_flash_attn2": false,
   "output_dir": "output/grpo2_prompt2",
   "num_train_epochs": 1,
-  "beta": 0.0,
+  "beta": 0.1,
   "num_generations": 4,
   "per_device_train_batch_size": 8,
   "gradient_accumulation_steps": 1,
@@ -37,3 +37,4 @@
   "lora_rank": 8,
   "lora_alpha": 32
 }
+
