@@ -5,6 +5,8 @@ import re
 from collections import Counter
 from pathlib import Path
 
+from localization_metrics import average_precision, mean_average_precision, ndcg_at_k, recall_at_k
+
 
 LIST_RE = re.compile(r"\[\s*-?\d+(?:\s*,\s*-?\d+){2}\s*\]")
 
@@ -20,6 +22,7 @@ def parse_args():
         default="wrong0:20,one_not_order:25,two_not_order:15,three_not_order:15,one_correct_order:20,two_correct_order:10,three_correct_order:5",
         help="Comma-separated bucket:weight list. Will be normalized to 100%%.",
     )
+    p.add_argument("-k", type=int, default=3, help="K for Recall@K and nDCG@K (same as baseline eval).")
     p.add_argument("--save-json", default="", help="Optional path to save evaluation JSON.")
     return p.parse_args()
 
@@ -79,6 +82,25 @@ def _parse_target_weights(spec: str):
     return {k: (v / s) * 100.0 for k, v in out.items()}
 
 
+def _pad_missing_with_impossible(pred, target_len: int = 3):
+    if len(pred) >= target_len:
+        return pred
+    out = list(pred)
+    filler = 99
+    while len(out) < target_len:
+        if filler not in out:
+            out.append(filler)
+        filler += 1
+    return out
+
+
+def _safe_pred_for_at_k(pred, k: int):
+    if len(pred) >= k:
+        return pred
+    sentinel = -10**9
+    return pred + [sentinel] * (k - len(pred))
+
+
 def main():
     args = parse_args()
     gt_path = Path(args.gt_json).expanduser().resolve()
@@ -98,6 +120,8 @@ def main():
     counts = Counter()
     bad_gt = 0
     bad_pred = 0
+    preds = []
+    gts = []
 
     for sid in common_ids:
         gt_list = _extract_list_from_record(gt_by_id[sid])
@@ -109,6 +133,9 @@ def main():
             bad_pred += 1
             continue
         counts[_bucket(gt_list, pred_list)] += 1
+        pred3 = _pad_missing_with_impossible(pred_list, target_len=3)
+        preds.append(pred3)
+        gts.append(gt_list)
 
     used = sum(counts.values())
     actual_pct = {k: (counts[k] * 100.0 / used if used else 0.0) for k in sorted(counts)}
@@ -116,6 +143,31 @@ def main():
 
     all_keys = sorted(set(actual_pct) | set(target_pct))
     diff = {k: actual_pct.get(k, 0.0) - target_pct.get(k, 0.0) for k in all_keys}
+
+    if preds:
+        recall_vals = []
+        ndcg_vals = []
+        ap_vals = []
+        for p, g in zip(preds, gts):
+            p_at_k = _safe_pred_for_at_k(p, args.k)
+            recall_vals.append(recall_at_k(p_at_k, g, args.k))
+            ndcg_vals.append(ndcg_at_k(p_at_k, g, args.k))
+            ap_vals.append(average_precision(p, g))
+        baseline_metrics = {
+            "num_samples": len(preds),
+            f"recall@{args.k}": sum(recall_vals) / len(recall_vals),
+            f"ndcg@{args.k}": sum(ndcg_vals) / len(ndcg_vals),
+            "mean_ap": sum(ap_vals) / len(ap_vals),
+            "map": mean_average_precision(preds, gts),
+        }
+    else:
+        baseline_metrics = {
+            "num_samples": 0,
+            f"recall@{args.k}": 0.0,
+            f"ndcg@{args.k}": 0.0,
+            "mean_ap": 0.0,
+            "map": 0.0,
+        }
 
     out = {
         "gt_json": gt_path.as_posix(),
@@ -130,6 +182,7 @@ def main():
         "actual_pct": actual_pct,
         "target_pct_normalized": target_pct,
         "actual_minus_target_pct": diff,
+        "baseline_localization_metrics": baseline_metrics,
     }
 
     print(json.dumps(out, ensure_ascii=False, indent=2))
@@ -142,4 +195,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
