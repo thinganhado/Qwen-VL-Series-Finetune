@@ -1,6 +1,7 @@
 {
   "deepspeed": "scripts/zero2.json",
   "use_liger_loss": true,
+  "lora_enable": true,
   "data_path": "/path/to/grpo2_prompt2.json",
   "image_folder": "/path/to/images",
   "reward_module": "src.train.reward_funcs_prompt2",
@@ -32,5 +33,7 @@
   "save_strategy": "steps",
   "save_steps": 100,
   "save_total_limit": 10,
-  "dataloader_num_workers": 4
+  "dataloader_num_workers": 4,
+  "lora_rank": 8,
+  "lora_alpha": 32
 }

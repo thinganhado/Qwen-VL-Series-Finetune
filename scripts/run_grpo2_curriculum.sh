@@ -34,6 +34,10 @@ FREEZE_MERGER="${FREEZE_MERGER:-False}"
 BF16="${BF16:-False}"
 FP16="${FP16:-True}"
 DISABLE_FLASH_ATTN2="${DISABLE_FLASH_ATTN2:-False}"
+LORA_ENABLE="${LORA_ENABLE:-True}"
+LORA_RANK="${LORA_RANK:-8}"
+LORA_ALPHA="${LORA_ALPHA:-32}"
+LORA_DROPOUT="${LORA_DROPOUT:-0.05}"
 NUM_GENERATIONS="${NUM_GENERATIONS:-4}"
 PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-8}"
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-1}"
@@ -54,6 +58,8 @@ SAVE_STEPS="${SAVE_STEPS:-100}"
 SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-10}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-4}"
 REMOVE_UNUSED_COLUMNS="${REMOVE_UNUSED_COLUMNS:-False}"
+WARMUP_MAX_STEPS="${WARMUP_MAX_STEPS:-120}"
+TOTAL_MAX_STEPS="${TOTAL_MAX_STEPS:-360}"
 
 if [ "${WARMUP_EPOCHS}" -gt "${TOTAL_EPOCHS}" ]; then
   echo "Error: warmup_epochs (${WARMUP_EPOCHS}) cannot be greater than total_epochs (${TOTAL_EPOCHS})."
@@ -87,6 +93,10 @@ COMMON_ARGS=(
   --bf16 "${BF16}"
   --fp16 "${FP16}"
   --disable_flash_attn2 "${DISABLE_FLASH_ATTN2}"
+  --lora_enable "${LORA_ENABLE}"
+  --lora_rank "${LORA_RANK}"
+  --lora_alpha "${LORA_ALPHA}"
+  --lora_dropout "${LORA_DROPOUT}"
   --output_dir "${OUTPUT_DIR}"
   --num_generations "${NUM_GENERATIONS}"
   --per_device_train_batch_size "${PER_DEVICE_TRAIN_BATCH_SIZE}"
@@ -114,11 +124,13 @@ COMMON_ARGS=(
 echo "[Phase 1/2] GRPO-2 warmup on GT-conditioned regions"
 echo "data_path=${GT_DATA_PATH}"
 echo "num_train_epochs=${WARMUP_EPOCHS}"
+echo "max_steps=${WARMUP_MAX_STEPS}"
 
 ${DS_LAUNCHER} src/train/train_grpo.py \
   "${COMMON_ARGS[@]}" \
   --data_path "${GT_DATA_PATH}" \
-  --num_train_epochs "${WARMUP_EPOCHS}"
+  --num_train_epochs "${WARMUP_EPOCHS}" \
+  --max_steps "${WARMUP_MAX_STEPS}"
 
 if [ "${WARMUP_EPOCHS}" -eq "${TOTAL_EPOCHS}" ]; then
   echo "Curriculum complete in phase 1 (warmup_epochs == total_epochs)."
@@ -128,8 +140,10 @@ fi
 echo "[Phase 2/2] GRPO-2 continuation on GRPO-1 predicted regions"
 echo "data_path=${PRED_DATA_PATH}"
 echo "num_train_epochs=${TOTAL_EPOCHS} (resume from checkpoints in ${OUTPUT_DIR})"
+echo "max_steps=${TOTAL_MAX_STEPS}"
 
 ${DS_LAUNCHER} src/train/train_grpo.py \
   "${COMMON_ARGS[@]}" \
   --data_path "${PRED_DATA_PATH}" \
-  --num_train_epochs "${TOTAL_EPOCHS}"
+  --num_train_epochs "${TOTAL_EPOCHS}" \
+  --max_steps "${TOTAL_MAX_STEPS}"
