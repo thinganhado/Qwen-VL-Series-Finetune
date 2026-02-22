@@ -16,7 +16,7 @@
   "num_train_epochs": 1,
   "max_steps": 400,
   "beta": 0.1,
-  "num_generations": 4,
+  "num_generations": 2,
   "temperature": 1.1,
   "per_device_train_batch_size": 4,
   "gradient_accumulation_steps": 1,
