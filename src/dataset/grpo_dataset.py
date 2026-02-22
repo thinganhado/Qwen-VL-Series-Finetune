@@ -133,6 +133,7 @@ class GRPODataset(Dataset):
         data_dict = dict(
             prompt=user_prompt,
             assistant=assistant_prompt,
+            sft_top3="13, 1, 2",
         )
 
         # Optional passthrough fields for reward functions.

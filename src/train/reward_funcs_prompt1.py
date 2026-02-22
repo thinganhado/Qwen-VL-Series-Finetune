@@ -1,11 +1,10 @@
 import re
 import math
-import os
 from typing import Dict, List, Optional, Sequence
 
 W_NDCG = 1.0
 W_FORMAT = 0.1
-W_NOVELTY = float(os.getenv("PROMPT1_W_NOVELTY", "0.0"))
+W_NOVELTY = 0.5
 
 
 def _parse_region_ids_any(text: str) -> Optional[List[int]]:
@@ -118,8 +117,8 @@ def prompt1_reward(completions: Sequence[str], assistant: Sequence[str], **kwarg
     Weighted Prompt-1 reward:
       w_ndcg * nDCG@3 + w_format * strict_format + w_novelty * novelty
 
-    Novelty:
-      sum_{c in pred} I(c in GT and c not in SFT_top3)
+    Novelty (repulsion):
+      (|pred ∩ GT| - |pred ∩ SFT_top3|) / |pred|
 
     SFT_top3 is read from kwargs key `sft_top3` first, then `prompt1_output`.
     If neither is present for a sample, novelty is treated as 0.
@@ -139,7 +138,9 @@ def prompt1_reward(completions: Sequence[str], assistant: Sequence[str], **kwarg
         if pred_ids is not None and sft_refs is not None:
             sft_item = sft_refs[idx] if idx < len(sft_refs) else None
             sft_ids = set(_parse_ids_loose(sft_item))
-            novelty = float(sum(1 for rid in pred_ids if rid in gt_ids and rid not in sft_ids))
+            pred_set = set(pred_ids)
+            numer = len(pred_set & gt_ids) - len(pred_set & sft_ids)
+            novelty = float(numer) / float(len(pred_set))
 
         rewards.append(float(W_NDCG * n + W_FORMAT * f + W_NOVELTY * novelty))
     return rewards
