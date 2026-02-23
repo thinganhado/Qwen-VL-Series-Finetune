@@ -64,5 +64,12 @@ PY
 )"
 
 CMD="$DS_LAUNCHER src/train/train_grpo.py --model_id \"$MODEL_ID\" --output_dir \"$BASE_OUTPUT_DIR\" $EXTRA_ARGS"
+
+# Hard override for GRPO-1 stability/memory guardrail.
+# If set, this value takes precedence over config JSON.
+if [ -n "${GRPO_FORCE_PER_DEVICE_BATCH_SIZE:-}" ]; then
+  CMD="$CMD --per_device_train_batch_size \"${GRPO_FORCE_PER_DEVICE_BATCH_SIZE}\""
+fi
+
 echo "$CMD"
 eval "$CMD"

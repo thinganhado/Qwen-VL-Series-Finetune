@@ -55,5 +55,7 @@ if [ -z "${MODEL_ID:-}" ]; then
   exit 1
 fi
 
+export GRPO_FORCE_PER_DEVICE_BATCH_SIZE=8
+
 bash scripts/run_grpo_from_config.sh "${MODEL_ID}" "${CONFIG_JSON}" \
   2>&1 | tee "${RUN_ROOT}/logs/grpo1_${SLURM_JOB_ID}.log"

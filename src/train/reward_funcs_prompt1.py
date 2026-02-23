@@ -5,7 +5,7 @@ from typing import Dict, List, Optional, Sequence
 W_NDCG = 1.0
 W_FORMAT = 0.1
 W_NOVELTY = 0.5
-W_DIVERSITY = 0.2
+W_DIVERSITY = 0.0
 
 
 def _parse_region_ids_any(text: str) -> Optional[List[int]]:
