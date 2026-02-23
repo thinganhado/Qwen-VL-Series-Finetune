@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Sequence
 W_NDCG = 1.0
 W_FORMAT = 0.1
 W_NOVELTY = 0.5
+W_DIVERSITY = 0.2
 
 
 def _parse_region_ids_any(text: str) -> Optional[List[int]]:
@@ -112,10 +113,46 @@ def _ndcg3_score(completions: Sequence[str], assistant: Sequence[str], **kwargs)
     return rewards
 
 
+def _diversity_scores(completions: Sequence[str], num_generations: int) -> List[float]:
+    """
+    Group-level diversity score for each completion c_i:
+      | IDs(c_i) \\ union(IDs(other completions in group)) | / |IDs(c_i)|
+
+    Invalid completions receive 0.0.
+    """
+    if num_generations <= 1:
+        return [0.0 for _ in completions]
+
+    parsed: List[Optional[List[int]]] = [_parse_region_ids_any(c) for c in completions]
+    scores = [0.0 for _ in completions]
+
+    for start in range(0, len(completions), num_generations):
+        end = min(start + num_generations, len(completions))
+        group_sets: List[set] = []
+        for idx in range(start, end):
+            ids = parsed[idx]
+            group_sets.append(set(ids) if ids is not None else set())
+
+        for local_idx, idx in enumerate(range(start, end)):
+            cur = group_sets[local_idx]
+            if not cur:
+                scores[idx] = 0.0
+                continue
+            others_union = set()
+            for other_local_idx, other_set in enumerate(group_sets):
+                if other_local_idx == local_idx:
+                    continue
+                others_union |= other_set
+            unique_ids = cur - others_union
+            scores[idx] = float(len(unique_ids)) / float(len(cur))
+
+    return scores
+
+
 def prompt1_reward(completions: Sequence[str], assistant: Sequence[str], **kwargs) -> List[float]:
     """
     Weighted Prompt-1 reward:
-      w_ndcg * nDCG@3 + w_format * strict_format + w_novelty * novelty
+      w_ndcg * nDCG@3 + w_format * strict_format + w_novelty * novelty + w_diversity * diversity
 
     Novelty (repulsion):
       (|pred ∩ GT| - |pred ∩ SFT_top3|) / |pred|
@@ -125,12 +162,16 @@ def prompt1_reward(completions: Sequence[str], assistant: Sequence[str], **kwarg
     """
     ndcg_scores = _ndcg3_score(completions, assistant, **kwargs)
     format_scores = _strict_format_score(completions, **kwargs)
+    num_generations = int(kwargs.get("num_generations", 4))
+    diversity_scores = _diversity_scores(completions, num_generations=num_generations)
     sft_refs = kwargs.get("sft_top3")
     if sft_refs is None:
         sft_refs = kwargs.get("prompt1_output")
 
     rewards: List[float] = []
-    for idx, (completion, gt_text, n, f) in enumerate(zip(completions, assistant, ndcg_scores, format_scores)):
+    for idx, (completion, gt_text, n, f, d) in enumerate(
+        zip(completions, assistant, ndcg_scores, format_scores, diversity_scores)
+    ):
         pred_ids = _parse_region_ids_any(completion)
         gt_ids = set(_parse_gt_ids(gt_text))
 
@@ -142,5 +183,5 @@ def prompt1_reward(completions: Sequence[str], assistant: Sequence[str], **kwarg
             numer = len(pred_set & gt_ids) - len(pred_set & sft_ids)
             novelty = float(numer) / float(len(pred_set))
 
-        rewards.append(float(W_NDCG * n + W_FORMAT * f + W_NOVELTY * novelty))
+        rewards.append(float(W_NDCG * n + W_FORMAT * f + W_NOVELTY * novelty + W_DIVERSITY * d))
     return rewards
